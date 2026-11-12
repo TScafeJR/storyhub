@@ -75,7 +75,7 @@ describe('storyhub in a real Storybook', () => {
     it('shows branch sections first, each with only its affected stories, then the common stories', async () => {
         const page = await browser.newPage();
         await page.goto(`${base}/`);
-        await until(async () => (await sidebar(page)).includes('⎇ feat-ui · deps changed'), 'branch sections in the sidebar');
+        await until(async () => (await sidebar(page)).includes('⎇ feat-ui · deps changed, behind main'), 'branch sections in the sidebar');
         // DOM order is Storybook's (local first); storyhub reorders visually, so read on-screen positions
         const blocks = await page.$$eval('#storybook-explorer-tree > div', els =>
             els
@@ -93,7 +93,7 @@ describe('storyhub in a real Storybook', () => {
             ['⎇ feat-label', ['Card']],
             ['⎇ feat-new', ['Chip']],
             ['⎇ feat-theme', ['Button', 'Card']],
-            ['⎇ feat-ui · deps changed', ['Panel']],
+            ['⎇ feat-ui · deps changed, behind main', ['Panel']],
             ['Common', ['Badge', 'Default', 'Button', 'Card', 'Late', 'Panel']]
         ]);
         expect(await page.evaluate(() => getComputedStyle(document.querySelector('#storybook-explorer-tree > div:not([data-title]):not([aria-label])')!, '::before').content)).toBe('"Common"');

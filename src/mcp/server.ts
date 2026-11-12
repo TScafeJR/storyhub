@@ -24,6 +24,7 @@ const DRIFT_HELP = {
     'deps-drift': 'package.json or a lockfile changed; the branch still renders with the hub dependencies',
     'config-drift': 'the Storybook config dir changed; the hub main config is used (preview files are applied per branch)',
     diverged: 'some files changed on both the hub and the branch since they split; the branch version wins',
+    behind: 'main changed files the branch renders from its own older copy (see staleFiles); rebase or merge main to render them current',
     'missing-dep': 'the branch imports packages the hub cannot resolve; affected stories will error'
 };
 
@@ -89,6 +90,7 @@ function tools(deps: McpDeps): Tool[] {
                     mergeBase: b.mergeBase,
                     drift: b.drift.map(d => ({ flag: d, meaning: DRIFT_HELP[d] })),
                     diverged: b.diverged,
+                    staleFiles: b.staleFiles,
                     missingDeps: b.missingDeps,
                     changes: b.changes,
                     affected,

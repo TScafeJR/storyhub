@@ -81,6 +81,10 @@ describe('StoryHub on the fixture repo', () => {
         const b = branch('feat-ui');
         expect(b.affectedStories).toEqual(['src/components/Panel.stories.tsx']);
         expect(b.drift).toContain('deps-drift');
+        // main edited Panel.tsx after the split; feat-ui renders its own (older) copy and says so
+        expect(b.staleFiles).toEqual(['src/components/Panel.tsx']);
+        expect(b.drift).toContain('behind');
+        expect(branch('feat-button').staleFiles).toEqual([]);
         expect(b.dirty.has('packages/ui/src/index.ts')).toBe(true);
     });
 

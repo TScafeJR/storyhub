@@ -24,6 +24,7 @@ const DRIFT_LABEL: Record<string, string> = {
     'deps-drift': 'deps changed',
     'config-drift': '.storybook changed',
     diverged: 'diverged',
+    behind: 'behind main',
     'missing-dep': 'missing deps'
 };
 

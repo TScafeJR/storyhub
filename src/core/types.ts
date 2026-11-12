@@ -6,7 +6,7 @@ export interface FileChange {
     kind: ChangeKind;
 }
 
-export type DriftFlag = 'deps-drift' | 'config-drift' | 'diverged' | 'missing-dep';
+export type DriftFlag = 'deps-drift' | 'config-drift' | 'diverged' | 'behind' | 'missing-dep';
 
 export interface Worktree {
     /** Stable, URL/ref-safe identifier ([a-z0-9-]). */
@@ -41,6 +41,11 @@ export interface BranchState {
     dirty: Set<string>;
     /** Story files (git-root relative) whose rendering this branch changes. */
     affectedStories: string[];
+    /**
+     * Files the branch renders from its own copy (they sit between a story and the branch's changes)
+     * although only main changed them since the split; the branch shows their older version.
+     */
+    staleFiles: string[];
     /** Preview files (git-root relative) this branch must load from its worktree. */
     previewOverrides: string[];
     /** Bare imports this branch adds that the hub cannot resolve. */

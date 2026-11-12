@@ -129,7 +129,7 @@ export class StoryHub extends EventEmitter {
         hubEdges: Edges,
         hubSideByBase: Map<string, Promise<FileChange[]>>
     ): Promise<InternalBranch> {
-        const empty: InternalBranch = { worktree: wt, mergeBase: '', changes: [], drift: [], diverged: [], dirty: new Set(), affectedStories: [], previewOverrides: [], missingDeps: [], edges: new Map() };
+        const empty: InternalBranch = { worktree: wt, mergeBase: '', changes: [], drift: [], diverged: [], dirty: new Set(), affectedStories: [], staleFiles: [], previewOverrides: [], missingDeps: [], edges: new Map() };
         try {
             const base = await mergeBase(this.root, hubHead, wt.head);
             if (!base) return { ...empty, error: 'no common history with the hub checkout' };
@@ -151,8 +151,11 @@ export class StoryHub extends EventEmitter {
             const affectedStories = [...entries].filter(s => dirty.has(s) && existsSync(join(wt.path, s))).sort();
             const drift = classifyDrift(changes, this.configDirRel, diverged, new Set(previewFiles));
             const previewOverrides = previewFiles.filter(f => dirty.has(f) && existsSync(join(wt.path, f)));
+            const changedRels = new Set(changes.map(c => c.rel));
+            const staleFiles = [...dirty].filter(f => hubChanged.has(f) && !changedRels.has(f) && existsSync(join(wt.path, f))).sort();
+            if (staleFiles.length) drift.push('behind');
             if (graph.missingDeps.length) drift.push('missing-dep');
-            return { worktree: wt, mergeBase: base, changes, drift, diverged, dirty, affectedStories, previewOverrides, missingDeps: graph.missingDeps, edges: graph.edges };
+            return { worktree: wt, mergeBase: base, changes, drift, diverged, dirty, affectedStories, staleFiles, previewOverrides, missingDeps: graph.missingDeps, edges: graph.edges };
         } catch (err) {
             return { ...empty, error: err instanceof Error ? err.message : String(err) };
         }

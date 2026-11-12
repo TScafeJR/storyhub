@@ -161,6 +161,7 @@ export const Box = ({ children }: { children: React.ReactNode }) => <section dat
 };
 
 const lateHubFiles = {
+    'src/components/Panel.tsx': hubFiles['src/components/Panel.tsx'].replace('<Box>panel</Box>', '<Box>panel (main)</Box>'),
     'src/components/Late.tsx': `import React from 'react';
 import { Button } from './Button';
 export const Late = () => <div data-testid="late"><Button label="Late" /></div>;
