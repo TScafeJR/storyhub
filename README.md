@@ -208,16 +208,15 @@ This repo's own installs refuse package versions published less than 7 days ago 
 
 ### Releasing
 
-Publishing always rebuilds `dist` (`prepack`) and runs the typecheck and unit tests first (`prepublishOnly`).
-
 ```sh
-pnpm release:check   # recommended: everything, including the browser E2E suite
-npm version patch    # or minor / major: bumps the version, commits and tags it
-pnpm publish         # refuses unless the tree is clean and you are on main
-git push --follow-tags
+npm run release              # or: pnpm release
+npm run release -- --full    # also run the browser E2E suite first
+npm run release -- --dry-run # walk through every step without changing anything
 ```
 
-Add the release notes to `CHANGELOG.md` before running `npm version`.
+It checks you are on an up-to-date `main` and logged in to npm, offers `git commit -p` for any pending changes, runs the typecheck and unit tests, asks for patch, minor or major, drafts the `CHANGELOG.md` entry from commit subjects since the last release tag (you can edit it), then bumps the version, commits, tags, pushes and runs `pnpm publish`. Nothing changes until you confirm the plan. If your npm account uses two-factor auth, pnpm prompts for the code.
+
+The script is called `release`, not `publish`, because `pnpm publish` runs a script named `publish` itself.
 
 ## License
 

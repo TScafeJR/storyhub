@@ -52,7 +52,8 @@
     "fixture": "node test/fixtures/create-fixture.mjs",
     "prepack": "pnpm build",
     "prepublishOnly": "pnpm typecheck && pnpm test",
-    "release:check": "pnpm typecheck && pnpm test && pnpm test:e2e && pnpm pack --dry-run"
+    "release:check": "pnpm typecheck && pnpm test && pnpm test:e2e && pnpm pack --dry-run",
+    "release": "node scripts/release.mjs"
   },
   "peerDependencies": {
     "storybook": "^10.5.0",
