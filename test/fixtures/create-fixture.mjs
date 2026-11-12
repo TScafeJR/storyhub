@@ -244,6 +244,8 @@ export function createFixture({ dir, scenarios: only = Object.keys(scenarios), i
         }
         worktrees[name] = wt;
     }
+    // branches are opt-in; the scenarios are switched on the way a user would (`storyhub on`)
+    for (const name of only) git(hub, 'config', '--add', 'storyhub.include', name);
     // main moves on after the branches split: a new story that imports Button exists only in the
     // hub, so branches that change Button must not offer it (it is absent from their worktrees)
     write(hub, lateHubFiles);

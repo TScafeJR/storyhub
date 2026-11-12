@@ -6,6 +6,7 @@ import { git } from './git.js';
 import { buildBranchGraph, buildHubGraph, importChain, ResolveCache, reverseClosure, SpecCache, type Edges, type GraphContext } from './graph.js';
 import { realpath, relInside, toPosix } from './paths.js';
 import type { BranchState, BranchSummary, FileChange, ResolveFn, Worktree } from './types.js';
+import { isSelected, readSelection, type SelectionOptions } from './selection.js';
 import { gitToplevel, listWorktrees } from './worktrees.js';
 
 export interface StoryHubOptions {
@@ -20,6 +21,8 @@ export interface StoryHubOptions {
      * They join the import graph so a branch that dirties something they import gets its own copy.
      */
     previewFiles?: string[];
+    /** Which worktrees become branches (opt-in by default; see selection.ts). */
+    selection?: SelectionOptions;
     resolve: ResolveFn;
     /** URL prefix the branch refs are served from. */
     refBase?: string;
@@ -43,7 +46,10 @@ const IGNORED = /(^|[\\/])(node_modules|\.git|dist|storybook-static|\.turbo|\.ne
 export class StoryHub extends EventEmitter {
     readonly root: string;
     readonly refBase: string;
+    /** The hub plus every selected worktree. */
     worktrees: Worktree[] = [];
+    /** Every worktree of the repo, selected or not. */
+    allWorktrees: Array<Worktree & { selected: boolean }> = [];
     branches = new Map<string, InternalBranch>();
     hubEdges: Edges = new Map();
     hubStories: string[] = [];
@@ -91,7 +97,10 @@ export class StoryHub extends EventEmitter {
 
     private async compute(): Promise<void> {
         const started = Date.now();
-        const worktrees = await listWorktrees(this.root);
+        const all = await listWorktrees(this.root);
+        const selection = await readSelection(this.root, this.opts.selection);
+        const allWorktrees = all.map(wt => ({ ...wt, selected: isSelected(wt, selection) }));
+        const worktrees = allWorktrees.filter(wt => wt.isHub || wt.selected);
         const hubHead = (await git(this.root, ['rev-parse', 'HEAD'])).trim();
         const files = (await git(this.root, ['ls-files', '-co', '--exclude-standard', '-z'])).split('\0').filter(Boolean);
         const hubStories = files.filter(rel => this.opts.isStoryFile(rel));
@@ -109,6 +118,7 @@ export class StoryHub extends EventEmitter {
         );
 
         this.worktrees = worktrees;
+        this.allWorktrees = allWorktrees;
         this.hubStories = hubStories;
         this.hubEdges = hubEdges;
         this.branches = new Map([...branches].sort(([a], [b]) => a.localeCompare(b)));

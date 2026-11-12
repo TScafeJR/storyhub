@@ -67,10 +67,10 @@ describe('parseWorktreeList', () => {
     it('parses porcelain output', () => {
         const out = `worktree /repo\nHEAD abc\nbranch refs/heads/main\n\nworktree /repo-feat\nHEAD def\ndetached\n\nworktree /bare\nbare\n\nworktree /gone\nHEAD 123\nbranch refs/heads/gone\nprunable gitdir file points to non-existent location\n`;
         expect(parseWorktreeList(out)).toEqual([
-            { path: '/repo', head: 'abc', branch: 'main', bare: false, prunable: false },
-            { path: '/repo-feat', head: 'def', branch: null, bare: false, prunable: false },
-            { path: '/bare', head: '', branch: null, bare: true, prunable: false },
-            { path: '/gone', head: '123', branch: 'gone', bare: false, prunable: true }
+            { path: '/repo', head: 'abc', branch: 'main', bare: false, prunable: false, locked: false },
+            { path: '/repo-feat', head: 'def', branch: null, bare: false, prunable: false, locked: false },
+            { path: '/bare', head: '', branch: null, bare: true, prunable: false, locked: false },
+            { path: '/gone', head: '123', branch: 'gone', bare: false, prunable: true, locked: false }
         ]);
     });
 });

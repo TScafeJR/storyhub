@@ -7,6 +7,7 @@ import type { InlineConfig, ViteDevServer } from 'vite';
 import type { StoryHub } from './core/state.js';
 import type { BranchSummary } from './core/types.js';
 import { isNodeModules, realpath, relInside } from './core/paths.js';
+import { isSelected, readSelection, type SelectionOptions } from './core/selection.js';
 import { gitToplevel, listWorktrees } from './core/worktrees.js';
 import { createMcpHandler } from './mcp/server.js';
 import { buildBranchIndex, isStoryFileFor, type IndexContext, type StoryIndex } from './server/branchIndex.js';
@@ -76,6 +77,13 @@ function indexContext(options: PresetOptions): Promise<IndexContext> {
 
 const refTitle = (branch: string | null, fallback: string) => `⎇ ${branch ?? fallback}`;
 
+/** Addon options `mode`, `include`, `exclude` (see selection.ts); git config adds to them. */
+const selectionOptions = (options: PresetOptions): SelectionOptions => ({
+    mode: options.mode === 'all' ? 'all' : 'opt-in',
+    include: Array.isArray(options.include) ? (options.include as string[]) : [],
+    exclude: Array.isArray(options.exclude) ? (options.exclude as string[]) : []
+});
+
 // The manager entry is picked up by Storybook's addon convention (the package's `./manager` export).
 
 /**
@@ -106,14 +114,16 @@ export const managerHead = async (head: string | undefined, options: PresetOptio
 export const refs = async (existing: Record<string, unknown> = {}, options: PresetOptions) => {
     if (!isDev(options)) return existing;
     let worktrees;
+    let selection;
     try {
-        worktrees = await listWorktrees(await gitToplevel(options.configDir));
+        const root = await gitToplevel(options.configDir);
+        [worktrees, selection] = await Promise.all([listWorktrees(root), readSelection(root, selectionOptions(options))]);
     } catch {
         return existing;
     }
     const out: Record<string, unknown> = { ...existing };
     for (const wt of worktrees) {
-        if (wt.isHub) continue;
+        if (!isSelected(wt, selection)) continue;
         out[wt.id] = { title: refTitle(wt.branch, basename(wt.path)), url: `${REF_BASE}/${wt.id}`, expanded: true };
     }
     return out;
@@ -129,6 +139,7 @@ export const viteFinal = async (config: InlineConfig, options: PresetOptions) =>
         configDir: options.configDir,
         isStoryFile: isStoryFileFor(ctx),
         previewFiles: await projectPreviewFiles(options, ctx.gitRoot),
+        selection: selectionOptions(options),
         refBase: REF_BASE,
         log: msg => console.log(msg),
         onHub: (hub, server) => {

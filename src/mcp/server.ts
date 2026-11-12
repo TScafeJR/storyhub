@@ -29,7 +29,8 @@ const DRIFT_HELP = {
 };
 
 const INSTRUCTIONS =
-    'storyhub renders every git worktree of this repo as a branch section in one Storybook. ' +
+    'storyhub renders opted-in git worktrees of this repo as branch sections in one Storybook ' +
+    '(turn one on with `npx storyhub on` inside it; list-worktrees shows what is on). ' +
     'Branch sections only contain stories whose rendering that branch changes. Use list-branches first, ' +
     'get-branch-changes to see what a branch touched and why each story is affected, and get-story-variants ' +
     'to get side-by-side URLs (hub vs branches) for a story id.';
@@ -63,6 +64,20 @@ function tools(deps: McpDeps): Tool[] {
                 const hub = await deps.getHub();
                 const branches = hub.summaries().map(s => ({ ...s, refUrl: `${origin}${s.refUrl}`, driftHelp: s.drift.map(d => DRIFT_HELP[d]) }));
                 return json({ hubRoot: hub.root, hubStoryFiles: hub.hubStories.length, branches });
+            }
+        },
+        {
+            name: 'list-worktrees',
+            title: 'List all worktrees and whether they are shown',
+            description:
+                'Lists every git worktree of the repo, including ones not shown in Storybook. Branches are opt-in: to show the worktree you are working in, run `npx storyhub on` inside it (and `npx storyhub off` to hide it again).',
+            inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
+            run: async () => {
+                const hub = await deps.getHub();
+                return json({
+                    worktrees: hub.allWorktrees.map(w => ({ id: w.id, branch: w.branch, path: w.path, hub: w.isHub, shown: w.selected })),
+                    howTo: { show: 'cd <worktree> && npx storyhub on', hide: 'cd <worktree> && npx storyhub off', listFromShell: 'npx storyhub list' }
+                });
             }
         },
         {

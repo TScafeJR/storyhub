@@ -9,12 +9,12 @@ export async function gitToplevel(cwd: string): Promise<string> {
     return realpath((await git(cwd, ['rev-parse', '--show-toplevel'])).trim());
 }
 
-export function parseWorktreeList(porcelain: string): Array<{ path: string; head: string; branch: string | null; bare: boolean; prunable: boolean }> {
-    const out: Array<{ path: string; head: string; branch: string | null; bare: boolean; prunable: boolean }> = [];
+export function parseWorktreeList(porcelain: string): Array<{ path: string; head: string; branch: string | null; bare: boolean; prunable: boolean; locked: boolean }> {
+    const out: Array<{ path: string; head: string; branch: string | null; bare: boolean; prunable: boolean; locked: boolean }> = [];
     for (const block of porcelain.split(/\n\n+/)) {
         const lines = block.split('\n').filter(Boolean);
         if (!lines.length) continue;
-        const entry = { path: '', head: '', branch: null as string | null, bare: false, prunable: false };
+        const entry = { path: '', head: '', branch: null as string | null, bare: false, prunable: false, locked: false };
         for (const line of lines) {
             const [key, ...rest] = line.split(' ');
             const value = rest.join(' ');
@@ -23,6 +23,7 @@ export function parseWorktreeList(porcelain: string): Array<{ path: string; head
             else if (key === 'branch') entry.branch = value.replace(/^refs\/heads\//, '');
             else if (key === 'bare') entry.bare = true;
             else if (key === 'prunable') entry.prunable = true;
+            else if (key === 'locked') entry.locked = true;
         }
         if (entry.path) out.push(entry);
     }

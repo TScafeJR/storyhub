@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { searchForWorkspaceRoot, type Plugin, type ViteDevServer } from 'vite';
 import { cleanId, isNodeModules, isRelativeSpec, realpath, relInside } from '../core/paths.js';
 import { StoryHub } from '../core/state.js';
+import { isSelected, readSelection, type SelectionOptions } from '../core/selection.js';
 import { listWorktrees } from '../core/worktrees.js';
 import { viteResolver } from './resolver.js';
 
@@ -19,6 +20,7 @@ export interface StoryhubVitePluginOptions {
     isStoryFile: (rel: string) => boolean;
     /** Git-root-relative preview annotation files of the project (see StoryHubOptions.previewFiles). */
     previewFiles?: string[];
+    selection?: SelectionOptions;
     refBase?: string;
     /** Called once the hub is ready (the dev server and its resolver exist). */
     onHub?: (hub: StoryHub, server: ViteDevServer) => void;
@@ -115,7 +117,8 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
     const structure = new Map<string, string>();
     let previewFingerprint = '';
     let viteRoot = process.cwd();
-    const previewFp = () => JSON.stringify([...(hub?.branches.values() ?? [])].map(b => [b.worktree.id, b.previewOverrides]));
+    // only branches that actually override a preview file matter; others must not force reloads
+    const previewFp = () => JSON.stringify([...(hub?.branches.values() ?? [])].filter(b => b.previewOverrides.length).map(b => [b.worktree.id, b.previewOverrides]));
 
     const allowRoots = (roots: string[]) => {
         if (!allow) return;
@@ -158,6 +161,7 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
             configDir: opts.configDir,
             isStoryFile: opts.isStoryFile,
             previewFiles: opts.previewFiles,
+            selection: opts.selection,
             resolve: viteResolver(server),
             refBase: opts.refBase,
             watch: { hub: false },
@@ -186,7 +190,8 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
 
         async config(config) {
             const root = config.root ?? process.cwd();
-            const worktrees = await listWorktrees(opts.gitRoot).catch(() => []);
+            const selection = await readSelection(opts.gitRoot, opts.selection).catch(() => null);
+            const worktrees = selection ? (await listWorktrees(opts.gitRoot).catch(() => [])).filter(w => isSelected(w, selection)) : [];
             const existing = config.server?.fs?.allow;
             const base = existing && existing.length ? [] : [searchForWorkspaceRoot(root)];
             return { server: { fs: { allow: [...base, opts.gitRoot, ...worktrees.map(w => w.path)] } } };

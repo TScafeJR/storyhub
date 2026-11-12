@@ -43,9 +43,21 @@ addons.register('storyhub', api => {
         return (g.REFS ??= {});
     };
 
+    // Storybook copies the startup REFS into its store asynchronously. Adding or removing a ref
+    // before that finishes makes its ref ordering produce undefined entries (the sidebar crashes),
+    // so every sync first waits until the store holds every key REFS has.
+    const refsReady = async () => {
+        for (let i = 0; i < 200; i++) {
+            const current = api.getRefs() as Record<string, unknown>;
+            if (Object.keys(globalRefs()).every(k => current[k])) return;
+            await new Promise(r => setTimeout(r, 50));
+        }
+    };
+
     let syncing = Promise.resolve();
     const sync = (branches: BranchSummary[]) => {
         syncing = syncing.then(async () => {
+            await refsReady();
             const REFS = globalRefs();
             const current = api.getRefs() as Record<string, RefLike>;
             const wanted = new Set(branches.map(b => b.id));

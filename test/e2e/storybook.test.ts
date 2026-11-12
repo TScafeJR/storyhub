@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
@@ -82,7 +82,8 @@ describe('storyhub in a real Storybook', () => {
                 .map(e => ({
                     title: e.getAttribute('data-title') ?? (e.getAttribute('aria-label') ? null : 'Common'),
                     top: e.getBoundingClientRect().top,
-                    text: (e as HTMLElement).innerText.split('\n').map(s => s.trim()).filter(s => s && !['COMPONENTS', 'Common', 'Skip to content'].includes(s))
+                    // component nodes only: which story leaves are expanded depends on the initial selection
+                    text: [...e.querySelectorAll('[data-nodetype="component"]')].map(n => (n as HTMLElement).innerText.trim())
                 }))
                 .filter(b => b.title)
                 .sort((a, b) => a.top - b.top)
@@ -94,7 +95,7 @@ describe('storyhub in a real Storybook', () => {
             ['⎇ feat-new', ['Chip']],
             ['⎇ feat-theme', ['Button', 'Card']],
             ['⎇ feat-ui · deps changed, behind main', ['Panel']],
-            ['Common', ['Badge', 'Default', 'Button', 'Card', 'Late', 'Panel']]
+            ['Common', ['Badge', 'Button', 'Card', 'Late', 'Panel']]
         ]);
         expect(await page.evaluate(() => getComputedStyle(document.querySelector('#storybook-explorer-tree > div:not([data-title]):not([aria-label])')!, '::before').content)).toBe('"Common"');
         await page.close();
@@ -168,22 +169,37 @@ describe('storyhub in a real Storybook', () => {
         await page.close();
     });
 
-    it('picks up worktrees added and removed while running', async () => {
+    it('shows a new worktree only once `storyhub on` is run in it, and hides it with `storyhub off`', async () => {
         const page = await browser.newPage();
         await page.goto(`${base}/`);
         await until(async () => (await sidebar(page)).includes('⎇ feat-button'), 'sidebar');
         const wt = join(fx.dir, 'feat-live');
         runGit(fx.hub, 'worktree', 'add', '-q', '-b', 'feat-live', wt);
         writeFileSync(join(wt, 'src/components/Badge.tsx'), `import React from 'react';\nexport const Badge = () => <em data-testid="badge">live badge</em>;\n`);
+        await new Promise(r => setTimeout(r, 1500));
+        expect((await branches()).some(b => b.id === 'feat-live')).toBe(false); // opt-in: not shown yet
+
+        // what an agent working in that worktree runs
+        const cli = (...args: string[]) => execFileSync(process.execPath, [join(fx.hub, 'node_modules/storyhub/dist/cli.js'), ...args], { cwd: wt, encoding: 'utf8' });
+        expect(cli('on')).toContain('on   feat-live');
         await until(async () => (await branches()).some(b => b.id === 'feat-live' && b.affectedStories === 1), 'feat-live branch');
         await until(async () => (await sidebar(page)).includes('⎇ feat-live'), 'feat-live section');
         expect(await renderedRoot(page, '/__storyhub/feat-live/iframe.html?id=components-badge--default&viewMode=story', '[data-testid=badge]')).toContain('live badge');
 
+        const warnings: string[] = [];
+        page.on('console', m => (m.type() === 'error' || m.type() === 'warning') && warnings.push(m.text().slice(0, 400)));
+        page.on('pageerror', e => warnings.push(`pageerror: ${String(e.stack ?? e).slice(0, 800)}`));
         await page.goto(`${base}/`);
-        await until(async () => (await sidebar(page)).includes('⎇ feat-live'), 'feat-live section after reload');
-        runGit(fx.hub, 'worktree', 'remove', '--force', wt);
-        await until(async () => !(await branches()).some(b => b.id === 'feat-live'), 'feat-live removed');
+        await until(async () => (await sidebar(page)).includes('⎇ feat-live'), 'feat-live section after reload').catch(async err => {
+            const refs = await page.evaluate(() => Object.keys((window as unknown as { REFS?: object }).REFS ?? {}));
+            const tree = await page.locator('#storybook-explorer-tree').count();
+            const text = tree ? await page.locator('#storybook-explorer-tree').innerText({ timeout: 2000 }).catch(() => '?') : '(no explorer tree)';
+            throw new Error(`${err.message.split('\n')[0]}\nsidebar: ${text.replace(/\n/g, ' | ')}\nREFS: ${refs}\nconsole: ${warnings.join(' || ')}`);
+        });
+        expect(cli('off')).toContain('off  feat-live');
+        await until(async () => !(await branches()).some(b => b.id === 'feat-live'), 'feat-live hidden');
         await until(async () => !(await sidebar(page)).includes('⎇ feat-live'), 'feat-live section removed');
+        runGit(fx.hub, 'worktree', 'remove', '--force', wt);
         await page.close();
     });
 
@@ -191,7 +207,7 @@ describe('storyhub in a real Storybook', () => {
         const client = new Client({ name: 'storyhub-e2e', version: '0.0.0' });
         await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/storyhub/mcp`)));
         const tools = (await client.listTools()).tools.map(t => t.name).sort();
-        expect(tools).toEqual(['get-branch-changes', 'get-story-variants', 'list-branches']);
+        expect(tools).toEqual(['get-branch-changes', 'get-story-variants', 'list-branches', 'list-worktrees']);
 
         const text = (r: unknown) => JSON.parse((r as { content: Array<{ text: string }> }).content[0].text);
         const list = text(await client.callTool({ name: 'list-branches', arguments: {} }));
