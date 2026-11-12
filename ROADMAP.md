@@ -24,21 +24,28 @@ These principles decide the trade-offs along the way:
 | 0.4 | Storybook may run from any checkout (the CLI finds it), live toggling from a worktree hub, sidebar race fix |
 | 0.5 | One MCP server: addon-mcp tools, resources and prompts passed through; branch-aware story preview and story tests (headless Chromium, regressions and fixes flagged against Common) |
 
-Verified on a real app (fossix/platform: Storybook 10.5.7, Vite 6, 92 story files, five branches): 168 of 169 story files rendered the same in the branch as in the hub; the one difference was a real "behind main" case, now flagged.
+Verified on a real app (Storybook 10.5.7, Vite 6, a monorepo with 92 story files, five branches): 168 of 169 story files rendered the same in the branch as in the hub; the one difference was a real "behind main" case, now flagged.
 
 ## 0.6: hardening on real repos
 
 The core works; the next risk is the long tail of real setups, and the fact that storyhub now runs browsers on an agent's behalf.
 
-- **Run it daily in your own repos.** fossix/platform (Vite 6, monorepo `frontend/`), nba-kevin-bacon-visual (Vite 8), whistle (`@storybook/react-native-web-vite`). Done when each runs a week with branches on and every surprise has a test in the fixture.
-- **Lock the endpoints to local use.** `/storyhub/mcp` and the `/__storyhub/*` routes answer any request that reaches the dev server, and the MCP test tool starts a browser. Check `Host` and `Origin` (blocks DNS rebinding from a web page) and follow Storybook's own `host` setting when it is exposed on a network. Done when a request with a foreign origin is refused, with a test for each route.
-- **Test matrix in CI.** A GitHub Actions workflow running lint, typecheck, unit and both E2E builders on every push, on macOS and Linux. Done when a red build blocks `npm run release`.
+- **Run it daily on real apps.** A Vite 6 monorepo, a single-package Vite 8 app, and a React Native Web app (`@storybook/react-native-web-vite`). Done when each runs a week with branches on and every surprise has a test in the fixture.
+- **Dev-server endpoint hardening.** The MCP endpoint and the `/__storyhub/*` routes get one shared request policy (local hosts by default, an `allowedHosts` option for named machines), and storyhub's requests to its own server never depend on request headers. Done when every route has a test for refused requests.
+- **Test matrix in CI.** A GitHub Actions workflow running lint, typecheck, unit and both E2E builders on every push, on macOS and Linux. Actions pinned by commit SHA, a read-only token, no secrets. Done when a red build blocks `npm run release`.
 - **Publish from CI with provenance.** npm trusted publishing from a tagged GitHub Actions run: no npm token anywhere, and a signed link from each version to the commit that built it. Done when `npm view storyhub` shows provenance and the release script tags instead of publishing.
-- **Canary against Storybook and addon-mcp.** storyhub depends on details that are not public API: the generated `importFn` module, project annotations loading, `api.setRef`, and addon-mcp's tool names for the preview and test tools it replaces. A weekly CI run against `storybook@next` and the newest addon-mcp catches breaks before users do. Done when an upstream change fails the canary before it reaches a Storybook release, and the fixture covers the oldest supported addon-mcp (0.7.0, used on fossix).
-- **TypeScript 7 toolchain.** Typecheck with `tsc` 7 (about four times faster, passes today), and emit declarations with `tsc` instead of tsup, which needs the TypeScript JS API that 7 no longer has. Done when `release:check` passes on TS 7 and a test project on TS 5.9 typechecks against the published types.
+- **Signed history.** Signed commits and release tags, enforced by a ruleset on `main` (no force pushes, no deletion). Done when every commit and tag since the switch shows as verified on GitHub.
+- **Canary against Storybook and addon-mcp.** storyhub depends on details that are not public API: the generated `importFn` module, project annotations loading, `api.setRef`, and addon-mcp's tool names for the preview and test tools it replaces. A weekly CI run against `storybook@next` and the newest addon-mcp catches breaks before users do. Done when an upstream change fails the canary before it reaches a Storybook release, and the fixture covers the oldest supported addon-mcp (0.7.0).
+- **Move to TypeScript 7.** A trial with 7.0.2 typechecks the whole repo with no errors in about 1 s (4 s on 5.9) and emits correct declarations. What remains:
+  1. Pin `typescript` 7.0.2.
+  2. Add `tsconfig.build.json` (`src` only, `emitDeclarationOnly`, `outDir: dist`) and run it from `pnpm build` after tsup. tsup's `dts` option cannot be used any more because it needs the TypeScript JS API, which 7 does not ship.
+  3. Point the `types` paths of `./vite` and `./webpack` in `package.json` at `dist/vite/index.d.ts` and `dist/webpack/index.d.ts` (declarations become one file per module instead of one bundle per entry).
+  4. Add a consumer test: a small project on TypeScript 5.9 that imports all three entry points and typechecks against the packed tarball.
+
+  Done when `release:check` passes on TS 7, including the consumer test.
 - **`storyhub off --all` and `storyhub on --only <branch>`.** Quick resets when many branches are on. Done when both work and are listed in `list` output hints.
 - **Stale opt-in entries.** A plain `git worktree remove` leaves the branch in `storyhub.include`. `list` should show such entries and `clean` should offer to drop them. Done when no orphaned entry survives a `clean --yes`.
-- **Startup and refresh cost.** Measured: about 2.8 s to build the graph for 5 branches on fossix. Persist parsed imports to disk (keyed by content hash) and update the graph incrementally from file events instead of re-walking it. Done when a refresh after a one-file edit takes under 200 ms on fossix.
+- **Startup and refresh cost.** Measured: about 2.8 s to build the graph for 5 branches on the Vite 6 monorepo pilot. Persist parsed imports to disk (keyed by content hash) and update the graph incrementally from file events instead of re-walking it. Done when a refresh after a one-file edit takes under 200 ms on that app.
 - **Windows.** Paths, `fs.watch`, drive letters in `/@fs` URLs and webpack requests. Done when the E2E suite passes on a Windows runner.
 
 ## 0.7: seeing the difference
@@ -53,9 +60,24 @@ The original idea was "branching or alternative views". Today you switch between
 
 ## 0.8: closer to "what main will look like"
 
-- **Rebase preview for "behind main".** Today a branch renders its own copy of files that sit between a story and its changes, even when main has moved on (the `behind main` note). Serving main's version of those files inside the branch's module namespace needs per-branch module identities for unchanged files (a query suffix in Vite, a request suffix in webpack) without breaking loaders and plugins that filter on file paths. Done when the fossix `support-and-req` case renders like main plus the branch's changes, with a switch to keep today's behaviour.
+- **Rebase preview for "behind main".** Today a branch renders its own copy of files that sit between a story and its changes, even when main has moved on (the `behind main` note). Serving main's version of those files inside the branch's module namespace needs per-branch module identities for unchanged files (a query suffix in Vite, a request suffix in webpack) without breaking loaders and plugins that filter on file paths. Done when the pilot's `behind main` case renders like main plus the branch's changes, with a switch to keep today's behaviour.
 - **Stories main added after the split.** They are skipped in branches today because the worktree does not have them. The same per-branch namespace would let them render with the branch's changes. Done when such stories appear in the branch section and render correctly.
 - **Dependency drift mode.** When a branch changes `package.json`, optionally resolve its bare imports from the worktree's own `node_modules` (if present) instead of the hub's, accepting a second copy of shared packages for that branch. Done when a branch that upgrades a UI library renders with the upgraded version on request.
+
+## 0.9: frameworks and builders
+
+storyhub is tested on React with Vite and webpack. The overlay model is framework-neutral (it works on files and imports), but each framework adds its own compiler, file types and runtime rules. Every framework below needs a fixture with branch scenarios, an E2E run, and a row in the CI matrix; the notes say what is likely to be hard.
+
+- **Angular** (`@storybook/angular`, webpack through the Angular CLI builder). The Angular compiler builds one TypeScript program for the whole project and reads `templateUrl` and `styleUrls` itself rather than through webpack, so a branch's changed template would not be picked up by the resolver redirect. Needs either a compiler host that maps dirty files to the worktree or a per-branch program limited to the dirty set. Also check standalone components and signal inputs. Analog (`@analogjs/storybook-angular`, Vite) may be the easier first step.
+- **Vue 3** (`@storybook/vue3-vite`). The graph already reads `<script>` blocks; also follow `<style src>`, `<template src>` and `@import` in style blocks, and confirm `vite-plugin-vue` HMR keeps branch and hub instances apart.
+- **Svelte and SvelteKit** (`@storybook/svelte-vite`, `@storybook/sveltekit`). Script blocks are read today; add `$lib` and the `$app/*` virtual modules, which must always come from the hub.
+- **Next.js** (`@storybook/nextjs` on webpack, `@storybook/nextjs-vite`). Next's own SWC loader and its mocks for `next/image`, `next/navigation` and fonts must keep working on worktree files. Server components stay out of scope, as in Storybook itself.
+- **Web components** (`@storybook/web-components-vite`, Lit). A branch copy of a module that calls `customElements.define` would try to register a tag the hub already registered, which throws. Each ref renders in its own iframe, so this may be fine, but it needs a test with a component imported by both a branch and the hub's preview.
+- **Preact and Solid** (`@storybook/preact-vite`, `storybook-solidjs-vite`). Mostly compiler and HMR plugins (Prefresh, solid-refresh) that key on module ids; confirm branch modules refresh on their own.
+- **React Native Web** (`@storybook/react-native-web-vite`). Already piloted; turn it into a fixture so it stays working.
+- **HTML and other renderers** (`@storybook/html-vite`, Ember, Qwik). Only on request; the generic path should work, and a fixture proves it.
+- **rsbuild and rspack** (`storybook-rsbuild`, `storybook-react-rsbuild`). rspack implements most of webpack's resolver hooks, so the webpack adapter is the starting point. Done when the same E2E suite passes on rsbuild.
+- **Content-scanning CSS** (Tailwind, UnoCSS). These generate CSS from class names found in the hub's files, so a class used only in a branch may be missing from its render. Confirm with a fixture, then add each branch's dirty files to the scanner's sources (Tailwind 4's `@source`, Uno's `content`). Done when a branch that adds a new utility class renders it.
 
 ## 1.0: a contract you can build on
 
@@ -63,7 +85,7 @@ The original idea was "branching or alternative views". Today you switch between
 
 - **Frozen surfaces under semver:** addon options, CLI commands and flags, the git config keys (`storyhub.include` / `storyhub.exclude`), the server record format, the `/__storyhub/*` routes, and MCP tool names, inputs and outputs.
 - **Machine-readable CLI.** `--json` on every command, with the same shapes the MCP tools return. Agents should never parse human output.
-- **A supported matrix, tested.** Storybook 10 and the current major after it, Vite 6 to 8, webpack 5, Node 20, 22 and 24, on macOS, Linux and Windows, all in CI.
+- **A supported matrix, tested.** Storybook 10 and the current major after it; Vite 6 to 8, webpack 5 and rsbuild; the frameworks from 0.9; Node 20, 22 and 24; macOS, Linux and Windows; all in CI.
 - **A deprecation policy.** Anything removed warns for at least one minor release first, in the CLI, the Storybook log and MCP tool descriptions.
 
 Done when the above is documented in the README and every item in it has a test.
@@ -94,7 +116,6 @@ Directions rather than plans. Each still says what "done" would look like, so it
 
 ### Beyond today's Storybook
 
-- **More builders and frameworks.** rsbuild (`storybook-rsbuild`), Next.js (`@storybook/nextjs`, webpack), Angular, Vue 3, Svelte and web components on Vite. The graph already reads Vue and Svelte script blocks and MDX imports; each needs a fixture and an E2E run. Done per framework when it joins the CI matrix.
 - **Upstream Storybook improvements.** The sidebar is reordered with CSS because Storybook always draws local stories first, `@storybook/addon-mcp` warns about refs it cannot reach and skips them, and branch indexes are served through private hooks. Proposing ref ordering, same-server refs, and a public way to add stories under a namespace would remove these workarounds and fix keyboard focus order. Done when storyhub uses only documented Storybook APIs.
 - **The overlay engine on its own.** The core (diff, import graph, reverse closure, resolver redirect) does not depend on Storybook. The same model could show a whole Vite app with a branch's changes at `/__branch/<id>/`, or serve other component workshops. Exploration only: done when a second consumer uses the core without Storybook, at which point it becomes its own package.
 
@@ -106,6 +127,7 @@ Not a milestone; rules every release keeps.
 - Dev dependencies are pinned exactly and only taken after they have been public for seven days.
 - Every release is built in CI with provenance, and the tarball can be rebuilt byte for byte from its tag (to be checked in CI once publishing moves there).
 - Network surfaces stay local by default and never collect telemetry.
+- Security reports go through GitHub's private vulnerability reporting (see `SECURITY.md`), and fixes ship before details are published.
 
 ## Known limitations today
 

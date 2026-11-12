@@ -3,3 +3,11 @@ dist
 *.tgz
 test/.cache
 .DS_Store
+
+# never commit credentials
+.env
+.env.*
+.npmrc
+*.pem
+*.key
+*.p12
