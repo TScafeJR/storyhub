@@ -233,7 +233,10 @@ export const experimental_devServer = async (app: App, options: PresetOptions) =
         getHubIndex: () => hubIndex(options),
         getBranchIndex: id => branchIndex(options, id),
         origin: req => originOf(options, req),
-        version
+        version,
+        refBase: REF_BASE,
+        // pass @storybook/addon-mcp through (default endpoint /mcp); `upstreamMcp: false` turns it off
+        upstreamUrl: req => (options.upstreamMcp === false ? null : `${originOf(options, req)}${typeof options.upstreamMcp === 'string' ? options.upstreamMcp : '/mcp'}`)
     });
 
     const handle = async (req: IncomingMessage, res: ServerResponse, next: Next) => {
@@ -271,6 +274,14 @@ export const experimental_devServer = async (app: App, options: PresetOptions) =
                 const html = (await upstream.text()).replace('</head>', `${reloadSnippet(id)}</head>`);
                 res.writeHead(upstream.status, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
                 return res.end(html);
+            }
+            // a branch preview link (/__storyhub/<id>/?path=/story/<story>) opens that story in the
+            // branch's sidebar section; the same URL with iframe.html is what preview apps embed
+            const storyPath = url.searchParams.get('path');
+            if (file === '' && storyPath?.startsWith('/story/')) {
+                url.searchParams.set('path', `/story/${id}_${storyPath.slice('/story/'.length)}`);
+                res.writeHead(302, { Location: `/?${url.searchParams.toString().replace(/%2F/g, '/').replace(/%3A/g, ':').replace(/%3B/g, ';')}` });
+                return res.end();
             }
             // anything else the preview asks for relatively (fonts, assets) lives at the root
             res.writeHead(302, { Location: `/${file}${url.search}` });

@@ -8,7 +8,9 @@ Where storyhub is, what comes next, and why. Each item says what problem it solv
 | --- | --- |
 | 0.1 | Branch sections over the main checkout (Vite), drift notes, MCP endpoint, CLI `status` / `doctor` |
 | 0.2 | Opt-in selection (`storyhub on` / `off` / `list`), `storyhub clean`, branches above Common, per-branch preview files, zero runtime dependencies, release script |
-| next | webpack 5 support, builder-agnostic reload channel, oxlint, arrow-key release picker |
+| 0.3 | webpack 5 support, builder-agnostic reload channel, oxlint, arrow-key release picker |
+| 0.4 | Storybook may run from any checkout (the CLI finds it), live toggling from a worktree hub, sidebar race fix |
+| next | One MCP server: addon-mcp passed through, branch-aware story preview and story tests with regression flags |
 
 Verified on a real app (fossix/platform: Storybook 10.5.7, Vite 6, 92 story files, five branches): 168 of 169 story files rendered the same in the branch as in the hub; the one difference was a real "behind main" case, now flagged.
 
@@ -31,7 +33,7 @@ The original idea was "branching or alternative views". Today you switch between
 - **Compare view.** A toolbar toggle that shows the same story from Common and from a branch side by side, synced on args and viewport. Done when any branch story can be compared in one click and the pairing survives story switches.
 - **Visual diff.** An overlay mode (onion skin, or highlighted changed pixels) on top of the compare view, computed in the browser from two screenshots. Done when a one-pixel change is visible without squinting.
 - **Branch panel.** A Storybook panel for the selected branch story: branch description (git's `branch.<name>.description`, else the latest commit subject), commits since the split, ahead/behind counts, and the import chain that put this story in the branch. Done when you can tell why a story is in a section without opening a terminal.
-- **MCP for agents: `compare-story`.** Returns both URLs plus, when a browser is available to the server, screenshots and a pixel-difference score, so an agent can confirm its change looks right. Done when an agent can verify a UI change end to end through MCP.
+- **MCP for agents: screenshots.** Branch preview URLs and branch story tests (with regressions against Common) shipped in 0.5; next is returning screenshots of both versions and a pixel-difference score from the same headless browser, so an agent can confirm a visual change without a human looking. Done when an agent can verify a purely visual change end to end through MCP.
 
 ## 0.6: closer to "what main will look like"
 

@@ -29,6 +29,7 @@ const write = (root, files) => {
 
 const libPkg = JSON.parse(readFileSync(join(libRoot, 'package.json'), 'utf8'));
 const common = {
+    playwright: libPkg.devDependencies.playwright,
     react: libPkg.devDependencies.react,
     'react-dom': libPkg.devDependencies['react-dom'],
     storybook: libPkg.devDependencies.storybook,
@@ -37,7 +38,7 @@ const common = {
 };
 /** Dependencies per builder; exact versions, installed under the 7-day release-age rule. */
 const depsManifests = {
-    vite: { '@storybook/react-vite': libPkg.devDependencies.storybook, vite: libPkg.devDependencies.vite },
+    vite: { '@storybook/react-vite': libPkg.devDependencies.storybook, '@storybook/addon-mcp': libPkg.devDependencies.storybook, vite: libPkg.devDependencies.vite },
     webpack: {
         '@storybook/react-webpack5': libPkg.devDependencies.storybook,
         '@storybook/addon-webpack5-compiler-swc': '4.0.3',
@@ -100,7 +101,7 @@ import type { StorybookConfig } from '@storybook/react-vite';
 
 const config: StorybookConfig = {
     stories: ['../src/**/*.stories.tsx'],
-    addons: ['storyhub'],
+    addons: ['@storybook/addon-mcp', 'storyhub'],
     framework: '@storybook/react-vite',
     core: { disableTelemetry: true },
     viteFinal: async vite => {
@@ -148,9 +149,16 @@ export default { title: 'Components/Button', component: Button };
 export const Primary = { args: { label: 'Primary' } };
 export const Secondary = { args: { label: 'Secondary' } };
 `,
-    'src/components/Card.stories.tsx': `import { Card } from './Card';
+    'src/components/Card.stories.tsx': `import { expect, within } from 'storybook/test';
+import { Card } from './Card';
 export default { title: 'Components/Card', component: Card };
 export const Default = {};
+// passes in the hub, fails in feat-button (which renders "Go v2"): exercises branch test regressions
+export const Checked = {
+    play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+        await expect(within(canvasElement).getByTestId('button')).toHaveTextContent('Go v1');
+    }
+};
 `,
     'src/components/Badge.stories.tsx': `import { Badge } from './Badge';
 export default { title: 'Components/Badge', component: Badge };

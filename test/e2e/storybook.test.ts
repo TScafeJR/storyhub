@@ -234,11 +234,63 @@ function suite(builder: 'vite' | 'webpack') {
             expect(status.branches.map(b => b.id)).toContain('feat-button');
         });
 
+        it('previews and tests branch stories through MCP, flagging regressions against Common', async () => {
+            const client = new Client({ name: 'storyhub-e2e', version: '0.0.0' });
+            await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/storyhub/mcp`)));
+            const listed = (await client.listTools()).tools;
+            // addon-mcp 10.6 calls its preview tool stories-preview; without addon-mcp storyhub serves preview-stories
+            const preview = listed.find(t => t.name === 'stories-preview' || t.name === 'preview-stories')!;
+            expect(preview.inputSchema.properties).toHaveProperty('branch');
+            expect(listed.find(t => t.name === 'run-story-tests')?.inputSchema.properties).toHaveProperty('branch');
+
+            // a story path inside a worktree selects that branch without naming it
+            const shown = (await client.callTool({
+                name: preview.name,
+                arguments: { stories: [{ absoluteStoryPath: join(fx.worktrees['feat-label'], 'src/components/Card.stories.tsx'), exportName: 'Default' }] }
+            })) as unknown as { structuredContent: { stories: Array<{ previewUrl: string }> } };
+            const url = shown.structuredContent.stories[0].previewUrl;
+            expect(url).toBe(`${base}/__storyhub/feat-label/?path=/story/components-card--default`);
+            // opened directly it lands in the branch section; preview apps embed the iframe form
+            const page = await browser.newPage();
+            await page.goto(url);
+            const frame = await until(async () => page.frames().find(f => f.url().includes('/__storyhub/feat-label/iframe.html')), 'branch ref iframe');
+            await frame.waitForSelector('[data-testid=label]', { timeout: 20_000 });
+            expect(await frame.locator('[data-testid=label]').innerText()).toBe('LABEL:card');
+            expect(await renderedRoot(page, url.replace(base, '').replace('/?path=/story/', '/iframe.html?id='), '[data-testid=label]')).toContain('LABEL:card');
+            await page.close();
+
+            // tests: Checked expects "Go v1"; feat-button renders a newer label, so it regresses there
+            const run = (await client.callTool({ name: 'run-story-tests', arguments: { branch: 'feat-button', stories: [{ storyId: 'components-card--checked' }] } })) as unknown as {
+                structuredContent: { results: Array<{ storyId: string; status: string; regression?: boolean; error?: string; common?: { status: string } }> };
+            };
+            expect(run.structuredContent.results).toEqual([expect.objectContaining({ storyId: 'components-card--checked', status: 'failed', regression: true, common: expect.objectContaining({ status: 'passed' }) })]);
+            expect(run.structuredContent.results[0].error).toContain('Go v1');
+            const clean = (await client.callTool({ name: 'run-story-tests', arguments: { branch: 'feat-label', stories: [{ storyId: 'components-card--checked' }] } })) as unknown as {
+                structuredContent: { results: Array<{ status: string; regression?: boolean }> };
+            };
+            expect(clean.structuredContent.results).toEqual([expect.objectContaining({ status: 'passed', regression: false })]);
+            await client.close();
+        });
+
+        it.runIf(builder === 'vite')('passes @storybook/addon-mcp through so one MCP server is enough', async () => {
+            const client = new Client({ name: 'storyhub-e2e', version: '0.0.0' });
+            await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/storyhub/mcp`)));
+            expect(client.getInstructions()).toContain('Storybook'); // addon-mcp's guidance is merged in
+            const names = (await client.listTools()).tools.map(t => t.name);
+            expect(names).toEqual(expect.arrayContaining(['get-storybook-story-instructions', 'stories-preview', 'list-branches']));
+            expect(names.filter(n => n === 'stories-preview')).toHaveLength(1); // replaced, not duplicated
+            const forwarded = (await client.callTool({ name: 'get-storybook-story-instructions', arguments: {} })) as { content: Array<{ text: string }> };
+            expect(forwarded.content[0].text.length).toBeGreaterThan(100);
+            const app = await client.readResource({ uri: 'ui://stories-preview/preview.html' });
+            expect(app.contents[0].mimeType).toContain('text/html');
+            await client.close();
+        });
+
         it('answers MCP tool calls about branches and story variants', async () => {
             const client = new Client({ name: 'storyhub-e2e', version: '0.0.0' });
             await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/storyhub/mcp`)));
             const tools = (await client.listTools()).tools.map(t => t.name).sort();
-            expect(tools).toEqual(['get-branch-changes', 'get-story-variants', 'list-branches', 'list-worktrees']);
+            expect(tools).toEqual(expect.arrayContaining(['get-branch-changes', 'get-story-variants', 'list-branches', 'list-worktrees', 'run-story-tests']));
 
             const list = toolJson(await client.callTool({ name: 'list-branches', arguments: {} }));
             expect(list.branches.map((b: { id: string }) => b.id)).toEqual(expect.arrayContaining(['feat-button', 'feat-label', 'feat-new', 'feat-theme', 'feat-ui']));
@@ -248,7 +300,7 @@ function suite(builder: 'vite' | 'webpack') {
             expect(changes.affected[0]).toMatchObject({
                 file: 'src/components/Card.stories.tsx',
                 reason: ['src/components/Card.stories.tsx', 'src/components/Card.tsx', 'src/components/Label.tsx'],
-                stories: [{ id: 'components-card--default', managerUrl: `${base}/?path=/story/feat-label_components-card--default` }]
+                stories: expect.arrayContaining([expect.objectContaining({ id: 'components-card--default', managerUrl: `${base}/?path=/story/feat-label_components-card--default` })])
             });
 
             const variants = toolJson(await client.callTool({ name: 'get-story-variants', arguments: { storyId: 'components-card--default' } }));

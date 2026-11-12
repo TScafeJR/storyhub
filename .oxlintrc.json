@@ -11,7 +11,7 @@
     "unicorn/no-array-sort": "off",
     "promise/always-return": "off",
     "oxc/no-map-spread": "off",
-    "no-underscore-dangle": ["error", { "allow": ["__id"] }]
+    "no-underscore-dangle": ["error", { "allow": ["__id", "_meta"] }]
   },
   "env": { "node": true, "browser": true, "es2024": true },
   "ignorePatterns": ["dist", "node_modules", "test/.cache"]

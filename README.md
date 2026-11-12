@@ -93,12 +93,13 @@ Agents working in a worktree can opt their own work in. Add something like this 
 This repo uses storyhub. When you change UI in a worktree, make it visible in the shared Storybook by
 running `npx --no-install storyhub on` inside the worktree (or `npx --no-install storyhub on <branch>`
 from the main checkout). Run `npx --no-install storyhub off` when you are done. Use the `storyhub`
-MCP tools to find the stories your branch affects and their URLs.
+MCP tools to find the stories your branch affects, preview them (pass your story file's absolute path
+or `branch`), and run their tests against your branch, which also flags regressions against Common.
 ```
 
 ## Connect MCP
 
-storyhub serves an MCP endpoint from the running Storybook at `/storyhub/mcp`. Add it to your MCP client next to `@storybook/addon-mcp`. With Claude Code, put this in `.mcp.json` (change the port to yours):
+storyhub serves an MCP endpoint from the running Storybook at `/storyhub/mcp`. It is the only Storybook MCP server your agents need: when `@storybook/addon-mcp` is installed, storyhub passes its tools, resources and prompts through and makes its preview and test tools branch-aware. With Claude Code, put this in `.mcp.json` (change the port to yours) and remove any separate `storybook` entry:
 
 ```json
 {
@@ -108,6 +109,8 @@ storyhub serves an MCP endpoint from the running Storybook at `/storyhub/mcp`. A
 }
 ```
 
+storyhub's own tools:
+
 | Tool | Returns |
 | --- | --- |
 | `list-worktrees` | Every worktree, whether it is shown, and the commands to change that |
@@ -115,7 +118,16 @@ storyhub serves an MCP endpoint from the running Storybook at `/storyhub/mcp`. A
 | `get-branch-changes` | A branch's changed files and every affected story, each with the import chain that explains why, plus URLs |
 | `get-story-variants` | For a story id, its URL in Common and in every branch that changes it, for side-by-side comparison |
 
-The tools are read-only. Turning branches on and off goes through the CLI.
+Branch-aware versions of addon-mcp's tools (they keep addon-mcp's names and inputs, so its instructions still apply):
+
+| Tool | What storyhub adds |
+| --- | --- |
+| Story preview (`preview-stories`, or `stories-preview` in addon-mcp 10.6) | Pass `branch`, or give a story by `absoluteStoryPath` inside a worktree, to get the branch's preview URL. It opens the story in its branch section, and addon-mcp's inline preview app renders the branch version. |
+| `run-story-tests` | With a branch (or a story path inside a worktree), renders each story in headless Chromium, runs its play function and reports pass/fail plus addon-a11y results. Each branch story also runs in Common, and failures that only happen in the branch are flagged as regressions. Omit `stories` to test every story the branch changes. Without a branch, the call goes to addon-vitest as before. |
+
+Every other addon-mcp tool (docs, story-writing instructions, changed stories and so on) is passed through unchanged. Without addon-mcp, storyhub still serves its own tools plus the preview and test tools. Branch tests use the Playwright your project already has for addon-vitest (`npx playwright install chromium` if Chromium is missing).
+
+The tools never change your repo. Turning branches on and off goes through the CLI.
 
 ## Clean up old worktrees
 
@@ -148,6 +160,7 @@ addons: [
       exclude: ['*-scratch'],    // patterns that are always off
       branchesPosition: 'top',   // or 'bottom' to keep Storybook's default order
       commonLabel: 'Common',     // heading for the main checkout's stories
+      upstreamMcp: '/mcp',       // addon-mcp endpoint to pass through, or false to turn that off
     },
   },
 ],
@@ -193,7 +206,7 @@ Edits in a worktree hot-reload in its section. Adding stories, changing imports,
 See [ROADMAP.md](ROADMAP.md) for what is planned for each of these.
 
 - A story that main added after a branch split does not appear in that branch, because the worktree does not have it.
-- `@storybook/addon-mcp` logs a "Skipping composed ref" warning at startup for each branch. It keeps working; use storyhub's MCP tools for branch data.
+- `@storybook/addon-mcp` logs a "Skipping composed ref" warning at startup for each branch. It keeps working, and storyhub's MCP endpoint covers branches.
 - The sidebar is reordered visually. Keyboard focus order follows Storybook's DOM order, which puts Common first.
 
 ## Contributing
