@@ -23,6 +23,7 @@ These principles decide the trade-offs along the way:
 | 0.3 | webpack 5 support, builder-agnostic reload channel, oxlint, arrow-key release picker |
 | 0.4 | Storybook may run from any checkout (the CLI finds it), live toggling from a worktree hub, sidebar race fix |
 | 0.5 | One MCP server: addon-mcp tools, resources and prompts passed through; branch-aware story preview and story tests (headless Chromium, regressions and fixes flagged against Common) |
+| 0.5.2 | Dev-server routes accept only local hostnames (or `allowedHosts`) and refuse requests from other sites; storyhub's requests to its own server no longer depend on request headers |
 
 Verified on a real app (Storybook 10.5.7, Vite 6, a monorepo with 92 story files, five branches): 168 of 169 story files rendered the same in the branch as in the hub; the one difference was a real "behind main" case, now flagged.
 
@@ -31,7 +32,6 @@ Verified on a real app (Storybook 10.5.7, Vite 6, a monorepo with 92 story files
 The core works; the next risk is the long tail of real setups, and the fact that storyhub now runs browsers on an agent's behalf.
 
 - **Run it daily on real apps.** A Vite 6 monorepo, a single-package Vite 8 app, and a React Native Web app (`@storybook/react-native-web-vite`). Done when each runs a week with branches on and every surprise has a test in the fixture.
-- **Dev-server endpoint hardening.** The MCP endpoint and the `/__storyhub/*` routes get one shared request policy (local hosts by default, an `allowedHosts` option for named machines), and storyhub's requests to its own server never depend on request headers. Done when every route has a test for refused requests.
 - **Test matrix in CI.** A GitHub Actions workflow running lint, typecheck, unit and both E2E builders on every push, on macOS and Linux. Actions pinned by commit SHA, a read-only token, no secrets. Done when a red build blocks `npm run release`.
 - **Publish from CI with provenance.** npm trusted publishing from a tagged GitHub Actions run: no npm token anywhere, and a signed link from each version to the commit that built it. Done when `npm view storyhub` shows provenance and the release script tags instead of publishing.
 - **Signed history.** Signed commits and release tags, enforced by a ruleset on `main` (no force pushes, no deletion). Done when every commit and tag since the switch shows as verified on GitHub.

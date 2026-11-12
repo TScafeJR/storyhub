@@ -13,6 +13,7 @@ import { gitCommonDir, registerServer } from './core/servers.js';
 import { gitToplevel, listWorktrees } from './core/worktrees.js';
 import { createMcpHandler } from './mcp/server.js';
 import { buildBranchIndex, isStoryFileFor, type IndexContext, type StoryIndex } from './server/branchIndex.js';
+import { refusal, type AllowedHosts } from './server/guard.js';
 
 export const REF_BASE = '/__storyhub';
 export const MCP_PATH = '/storyhub/mcp';
@@ -197,7 +198,26 @@ async function branchIndex(options: PresetOptions, id: string): Promise<StoryInd
     return buildBranchIndex(await indexContext(options), branch, await hubIndex(options));
 }
 
+/** Origin for URLs handed to the browser or an agent. Only used after the Host header passed the guard. */
 const originOf = (options: PresetOptions, req: IncomingMessage) => `${options.https ? 'https' : 'http'}://${req.headers.host ?? `localhost:${options.port ?? 6006}`}`;
+
+/** The server's own address, for requests storyhub makes to itself. Never taken from request headers. */
+const selfOrigin = (options: PresetOptions) => {
+    const host = !options.host || options.host === '0.0.0.0' || options.host === '::' ? 'localhost' : String(options.host);
+    return `${options.https ? 'https' : 'http'}://${host.includes(':') ? `[${host}]` : host}:${options.port ?? 6006}`;
+};
+
+/** Hostnames allowed besides IPs and localhost: the `allowedHosts` option plus Storybook's own --host. */
+const allowedHostsOf = (options: PresetOptions): AllowedHosts => {
+    const opt = options.allowedHosts;
+    if (opt === true) return true;
+    const list = Array.isArray(opt) ? opt.filter((h): h is string => typeof h === 'string') : [];
+    if (typeof options.host === 'string' && options.host) list.push(options.host);
+    return list;
+};
+
+/** A value safe to place inside an inline <script>. */
+const scriptJson = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c');
 
 /** Injected into each branch iframe: reload when the branch's structure (dirty/affected sets) changes. */
 /**
@@ -209,7 +229,7 @@ const reloadSnippet = (id: string) => `<script>
   if (typeof EventSource === 'undefined') return;
   var source = new EventSource('${REF_BASE}/events');
   source.addEventListener('reload', function (e) {
-    try { if (JSON.parse(e.data).ids.indexOf(${JSON.stringify(id)}) !== -1) location.reload(); } catch (err) { /* ignore malformed events */ }
+    try { if (JSON.parse(e.data).ids.indexOf(${scriptJson(id)}) !== -1) location.reload(); } catch (err) { /* ignore malformed events */ }
   });
 })();
 </script>`;
@@ -228,6 +248,7 @@ const sendJson = (res: ServerResponse, status: number, body: unknown) => {
 export const experimental_devServer = async (app: App, options: PresetOptions) => {
     if (!isDev(options)) return app;
     const s = session(options.configDir);
+    const allowedHosts = allowedHostsOf(options);
     const mcp = createMcpHandler({
         getHub: () => s.hub.promise,
         getHubIndex: () => hubIndex(options),
@@ -235,8 +256,9 @@ export const experimental_devServer = async (app: App, options: PresetOptions) =
         origin: req => originOf(options, req),
         version,
         refBase: REF_BASE,
+        allowedHosts,
         // pass @storybook/addon-mcp through (default endpoint /mcp); `upstreamMcp: false` turns it off
-        upstreamUrl: req => (options.upstreamMcp === false ? null : `${originOf(options, req)}${typeof options.upstreamMcp === 'string' ? options.upstreamMcp : '/mcp'}`)
+        upstreamUrl: () => (options.upstreamMcp === false ? null : `${selfOrigin(options)}${typeof options.upstreamMcp === 'string' ? options.upstreamMcp : '/mcp'}`)
     });
 
     const handle = async (req: IncomingMessage, res: ServerResponse, next: Next) => {
@@ -244,6 +266,8 @@ export const experimental_devServer = async (app: App, options: PresetOptions) =
             const url = new URL(req.url ?? '/', 'http://storyhub.local');
             if (url.pathname === MCP_PATH) return await mcp(req, res);
             if (!url.pathname.startsWith(`${REF_BASE}/`)) return next();
+            const refused = refusal(req, allowedHosts);
+            if (refused) return sendJson(res, 403, { error: refused });
             const rest = url.pathname.slice(REF_BASE.length + 1);
             if (rest === 'events') {
                 res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' });
@@ -269,8 +293,9 @@ export const experimental_devServer = async (app: App, options: PresetOptions) =
             }
             if (file === 'metadata.json') return sendJson(res, 200, {});
             if (file === 'iframe.html') {
+                if (!(await s.hub.promise).branches.has(id)) return sendJson(res, 404, { error: `unknown branch ${id}` });
                 // same preview bundle as the hub; only the URL (and so ./index.json) differs
-                const upstream = await fetch(`${originOf(options, req)}/iframe.html${url.search}`);
+                const upstream = await fetch(`${selfOrigin(options)}/iframe.html${url.search}`);
                 const html = (await upstream.text()).replace('</head>', `${reloadSnippet(id)}</head>`);
                 res.writeHead(upstream.status, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
                 return res.end(html);
@@ -283,8 +308,9 @@ export const experimental_devServer = async (app: App, options: PresetOptions) =
                 res.writeHead(302, { Location: `/?${url.searchParams.toString().replace(/%2F/g, '/').replace(/%3A/g, ':').replace(/%3B/g, ';')}` });
                 return res.end();
             }
-            // anything else the preview asks for relatively (fonts, assets) lives at the root
-            res.writeHead(302, { Location: `/${file}${url.search}` });
+            // anything else the preview asks for relatively (fonts, assets) lives at the root; leading
+            // slashes are dropped so the target can never become another site ("//evil.example")
+            res.writeHead(302, { Location: `/${file.replace(/^[/\\]+/, '')}${url.search}` });
             res.end();
         } catch (err) {
             if (!res.headersSent) sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
@@ -294,11 +320,10 @@ export const experimental_devServer = async (app: App, options: PresetOptions) =
     // tell the CLI which checkout this Storybook runs from, and where to reach it
     void s.hub.promise
         .then(async hub => {
-            const host = !options.host || options.host === '0.0.0.0' || options.host === '::' ? 'localhost' : String(options.host);
             registerServer(await gitCommonDir(hub.root), {
                 root: hub.root,
                 configDir: options.configDir,
-                url: `${options.https ? 'https' : 'http'}://${host}:${options.port ?? 6006}`,
+                url: selfOrigin(options),
                 version
             });
         })

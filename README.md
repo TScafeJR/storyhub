@@ -158,10 +158,13 @@ addons: [
       branchesPosition: 'top',   // or 'bottom' to keep Storybook's default order
       commonLabel: 'Common',     // heading for the main checkout's stories
       upstreamMcp: '/mcp',       // addon-mcp endpoint to pass through, or false to turn that off
+      allowedHosts: ['dev.box'], // extra hostnames that may reach storyhub's routes (see below)
     },
   },
 ],
 ```
+
+storyhub's routes (`/storyhub/mcp` and `/__storyhub/*`) only answer requests addressed to an IP address, `localhost` or a `*.localhost` name, and refuse requests sent by pages on other sites. This keeps a web page you visit from reaching them through your browser. If you open Storybook under another hostname (for example with `--host` on a shared machine), list it in `allowedHosts`; an entry starting with `.` also allows its subdomains, and `true` turns the check off. The name passed to Storybook's `--host` is allowed automatically.
 
 ## CLI reference
 

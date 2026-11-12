@@ -1,4 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { request } from 'node:http';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
@@ -49,6 +50,17 @@ function suite(builder: 'vite' | 'webpack') {
     const branchIndex = async (id: string) => (await (await fetch(`${base}/__storyhub/${id}/index.json`)).json()).entries as Record<string, { importPath: string }>;
 
 
+
+    // fetch() cannot set Host, so use node:http directly
+    const raw = (path: string, headers: Record<string, string>, method = 'GET', body?: string) =>
+        new Promise<{ status: number; location?: string }>((resolve, reject) => {
+            const r = request(`${base}${path}`, { method, headers }, res => {
+                res.resume();
+                resolve({ status: res.statusCode ?? 0, location: res.headers.location });
+            });
+            r.on('error', reject);
+            r.end(body);
+        });
 
     const renderedRoot = async (page: Page, path: string, selector: string) => {
         await page.goto(base + path);
@@ -284,6 +296,20 @@ function suite(builder: 'vite' | 'webpack') {
             const app = await client.readResource({ uri: 'ui://stories-preview/preview.html' });
             expect(app.contents[0].mimeType).toContain('text/html');
             await client.close();
+        });
+
+        it('refuses requests from other sites and rebinding hostnames, and never redirects off-site', async () => {
+            const rpc = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+            const json = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' };
+            expect((await raw('/storyhub/mcp', { ...json, Host: 'evil.example', Origin: 'http://evil.example' }, 'POST', rpc)).status).toBe(403);
+            expect((await raw('/storyhub/mcp', { ...json, Origin: 'https://evil.example' }, 'POST', rpc)).status).toBe(403);
+            expect((await raw('/__storyhub/branches.json', { Host: 'evil.example' })).status).toBe(403);
+            expect((await raw('/__storyhub/feat-button/iframe.html', { Host: 'evil.example' })).status).toBe(403);
+            expect((await raw('/__storyhub/branches.json', {})).status).toBe(200);
+            expect((await raw('/__storyhub/not-a-branch/iframe.html', {})).status).toBe(404);
+            const redirect = await raw('/__storyhub/feat-button//evil.example/x', {});
+            expect(redirect.status).toBe(302);
+            expect(redirect.location).toBe('/evil.example/x');
         });
 
         it('answers MCP tool calls about branches and story variants', async () => {

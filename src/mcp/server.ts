@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { StoryHub } from '../core/state.js';
 import type { StoryIndex } from '../server/branchIndex.js';
+import { refusal, type AllowedHosts } from '../server/guard.js';
 import { formatOutcomes, previewUrl, resolveStories, testInBrowser, type ResolvedStory, type StoryContext, type StoryInput, type Unresolved } from './stories.js';
 import { upstreamFor, type UpstreamInfo, type UpstreamMcp, type UpstreamTool } from './upstream.js';
 
@@ -20,9 +21,14 @@ export interface McpDeps {
     /** Absolute origin agents should open URLs on, e.g. http://localhost:6006 */
     origin: (req: IncomingMessage) => string;
     version: string;
-    /** URL of @storybook/addon-mcp's endpoint on this server, or null to not pass it through. */
+    /**
+     * URL of @storybook/addon-mcp's endpoint on this server, or null to not pass it through. Build
+     * it from the server's own address, never from request headers.
+     */
     upstreamUrl?: (req: IncomingMessage) => string | null;
     refBase?: string;
+    /** Hostnames besides IPs and localhost that may reach the endpoint (see server/guard.ts). */
+    allowedHosts?: AllowedHosts;
 }
 
 export const SUPPORTED_PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
@@ -384,8 +390,6 @@ export async function handleMessage(deps: McpDeps, msg: JsonRpcMessage, origin: 
     }
 }
 
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
-
 function readBody(req: IncomingMessage): Promise<string> {
     return new Promise((resolve, reject) => {
         let size = 0;
@@ -413,17 +417,8 @@ const send = (res: ServerResponse, status: number, body?: unknown, headers: Reco
 /** Streamable HTTP endpoint handler (stateless, JSON responses only). */
 export function createMcpHandler(deps: McpDeps) {
     return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-        const originHeader = req.headers.origin;
-        if (originHeader) {
-            let allowed = false;
-            try {
-                const host = new URL(originHeader).hostname;
-                allowed = LOCAL_HOSTS.has(host) || host === (req.headers.host ?? '').split(':')[0];
-            } catch {
-                allowed = false;
-            }
-            if (!allowed) return send(res, 403, rpcError(null, -32000, 'Invalid origin'));
-        }
+        const refused = refusal(req, deps.allowedHosts);
+        if (refused) return send(res, 403, rpcError(null, -32000, refused));
         if (req.method !== 'POST') return send(res, 405, rpcError(null, -32000, 'Method not allowed; this server is stateless and only accepts POST'), { Allow: 'POST' });
         if ((req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() !== 'application/json') {
             return send(res, 415, rpcError(null, -32000, 'Content-Type must be application/json'));
