@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" width="1200" height="560" role="img" aria-labelledby="title desc">
+  <title id="title">How storyhub decides what a branch shows</title>
+  <desc id="desc">Branch feat/pill-buttons changes Button.tsx. Button.stories.tsx and PlanCard.tsx import it, and PlanCard.stories.tsx imports PlanCard.tsx, so those load from the worktree and the Button and Plan Card stories appear in the branch section. Alert and Badge are unchanged and stay shared with the main checkout.</desc>
+  <defs>
+    <marker id="arrow-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" class="hot-fill"/>
+    </marker>
+    <marker id="arrow-cold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" class="cold-fill"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .ink { fill: #18181b; }
+    .muted { fill: #52525b; }
+    .faint { fill: #a1a1aa; }
+    .card { fill: #fafafa; stroke: #e4e4e7; }
+    .rule { stroke: #e4e4e7; }
+    .shared { fill: #f4f4f5; stroke: #d4d4d8; }
+    .shared-text { fill: #52525b; }
+    .dirty { fill: #f0fdfa; stroke: #0f766e; }
+    .dirty-text { fill: #134e4a; }
+    .changed { fill: #ea580c; stroke: #ea580c; }
+    .hot { stroke: #0f766e; }
+    .hot-fill { fill: #0f766e; }
+    .cold { stroke: #a1a1aa; }
+    .cold-fill { fill: #a1a1aa; }
+    .branch-line { stroke: #0f766e; }
+    @media (prefers-color-scheme: dark) {
+      .ink { fill: #f4f4f5; }
+      .muted { fill: #a1a1aa; }
+      .faint { fill: #71717a; }
+      .card { fill: #161b22; stroke: #30363d; }
+      .rule { stroke: #30363d; }
+      .shared { fill: #21262d; stroke: #30363d; }
+      .shared-text { fill: #a1a1aa; }
+      .dirty { fill: #0f2a28; stroke: #2dd4bf; }
+      .dirty-text { fill: #99f6e4; }
+      .hot { stroke: #2dd4bf; }
+      .hot-fill { fill: #2dd4bf; }
+      .cold { stroke: #484f58; }
+      .cold-fill { fill: #484f58; }
+      .branch-line { stroke: #2dd4bf; }
+    }
+  </style>
+
+  <!-- left: import graph -->
+  <text x="40" y="44" class="ink" font-size="20" font-weight="600">Branch <tspan class="mono">feat/pill-buttons</tspan> changes one file</text>
+  <text x="140" y="86" class="faint" font-size="13" font-weight="600" letter-spacing="1.2" text-anchor="middle">STORY FILES</text>
+  <text x="555" y="86" class="faint" font-size="13" font-weight="600" letter-spacing="1.2" text-anchor="middle">COMPONENTS THEY IMPORT</text>
+
+  <!-- edges (importer → imported) -->
+  <path d="M240 130 H596" class="hot" stroke-width="2" fill="none" marker-end="url(#arrow-hot)"/>
+  <path d="M240 200 H326" class="hot" stroke-width="2" fill="none" marker-end="url(#arrow-hot)"/>
+  <path d="M510 200 C555 200 555 130 596 130" class="hot" stroke-width="2" fill="none" marker-end="url(#arrow-hot)"/>
+  <path d="M510 200 C555 200 555 340 596 340" class="cold" stroke-width="2" fill="none" marker-end="url(#arrow-cold)"/>
+  <path d="M240 270 H326" class="cold" stroke-width="2" fill="none" marker-end="url(#arrow-cold)"/>
+  <path d="M240 340 H596" class="cold" stroke-width="2" fill="none" marker-end="url(#arrow-cold)"/>
+
+  <!-- story files -->
+  <rect x="40.5" y="108.5" width="199" height="43" rx="8" class="dirty" stroke-width="1.5"/>
+  <text x="140" y="135" class="dirty-text mono" font-size="14" text-anchor="middle">Button.stories.tsx</text>
+  <rect x="40.5" y="178.5" width="199" height="43" rx="8" class="dirty" stroke-width="1.5"/>
+  <text x="140" y="205" class="dirty-text mono" font-size="14" text-anchor="middle">PlanCard.stories.tsx</text>
+  <rect x="40.5" y="248.5" width="199" height="43" rx="8" class="shared"/>
+  <text x="140" y="275" class="shared-text mono" font-size="14" text-anchor="middle">Alert.stories.tsx</text>
+  <rect x="40.5" y="318.5" width="199" height="43" rx="8" class="shared"/>
+  <text x="140" y="345" class="shared-text mono" font-size="14" text-anchor="middle">Badge.stories.tsx</text>
+
+  <!-- middle components -->
+  <rect x="330.5" y="178.5" width="179" height="43" rx="8" class="dirty" stroke-width="1.5"/>
+  <text x="420" y="205" class="dirty-text mono" font-size="14" text-anchor="middle">PlanCard.tsx</text>
+  <rect x="330.5" y="248.5" width="179" height="43" rx="8" class="shared"/>
+  <text x="420" y="275" class="shared-text mono" font-size="14" text-anchor="middle">Alert.tsx</text>
+
+  <!-- leaf components -->
+  <rect x="600.5" y="108.5" width="169" height="43" rx="8" class="changed" stroke-width="1.5"/>
+  <text x="685" y="135" fill="#ffffff" class="mono" font-size="14" font-weight="600" text-anchor="middle">Button.tsx</text>
+  <text x="685" y="172" class="muted" font-size="13" text-anchor="middle">changed in the branch</text>
+  <rect x="600.5" y="318.5" width="169" height="43" rx="8" class="shared"/>
+  <text x="685" y="345" class="shared-text mono" font-size="14" text-anchor="middle">Badge.tsx</text>
+
+  <!-- divider -->
+  <line x1="820" y1="40" x2="820" y2="390" class="rule"/>
+
+  <!-- right: sidebar -->
+  <text x="860" y="44" class="ink" font-size="20" font-weight="600">What the sidebar shows</text>
+  <rect x="860.5" y="68.5" width="299" height="293" rx="12" class="card"/>
+  <g transform="translate(880 96)">
+    <path d="M4 14 V6 Q4 2 8 2 H10 M4 10 H10" class="branch-line" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <text x="20" y="13" class="ink mono" font-size="14" font-weight="600">feat/pill-buttons</text>
+  </g>
+  <text x="904" y="146" class="dirty-text" font-size="15">Button</text>
+  <text x="904" y="176" class="dirty-text" font-size="15">Plan Card</text>
+  <line x1="874" y1="198" x2="1146" y2="198" class="rule"/>
+  <text x="884" y="226" class="muted" font-size="14" font-weight="600">Common</text>
+  <text x="904" y="256" class="shared-text" font-size="15">Alert</text>
+  <text x="904" y="284" class="shared-text" font-size="15">Badge</text>
+  <text x="904" y="312" class="shared-text" font-size="15">Button</text>
+  <text x="904" y="340" class="shared-text" font-size="15">Plan Card</text>
+
+  <!-- legend -->
+  <line x1="40" y1="420" x2="1160" y2="420" class="rule"/>
+  <rect x="40" y="446" width="18" height="18" rx="4" class="changed"/>
+  <text x="68" y="460" class="ink" font-size="15">Changed in the branch</text>
+  <rect x="290.75" y="446.75" width="16.5" height="16.5" rx="4" class="dirty" stroke-width="1.5"/>
+  <text x="318" y="460" class="ink" font-size="15">Imports a changed file: loaded from the worktree</text>
+  <rect x="720.5" y="446.5" width="17" height="17" rx="4" class="shared"/>
+  <text x="748" y="460" class="ink" font-size="15">Unchanged: one shared copy from main</text>
+  <text x="40" y="508" class="muted" font-size="15">Everything else in the branch comes from the main checkout's module cache, so a branch adds only its changed files and the files that import them.</text>
+</svg>

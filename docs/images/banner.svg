@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 340" width="1200" height="340" role="img" aria-labelledby="title desc">
+  <title id="title">storyhub</title>
+  <desc id="desc">One Storybook for all your git worktrees. A sidebar shows two branch sections, each listing only the stories that branch changes, above the Common stories.</desc>
+  <style>
+    .ink { fill: #18181b; }
+    .muted { fill: #52525b; }
+    .faint { fill: #a1a1aa; }
+    .card { fill: #fafafa; stroke: #e4e4e7; }
+    .rule { stroke: #e4e4e7; }
+    .branch { fill: #0f766e; }
+    .branch-line { stroke: #0f766e; }
+    .icon { stroke: #a1a1aa; fill: none; }
+    .sel { fill: #0f766e; }
+    .tile { stroke: none; }
+    @media (prefers-color-scheme: dark) {
+      .ink { fill: #f4f4f5; }
+      .muted { fill: #a1a1aa; }
+      .faint { fill: #71717a; }
+      .card { fill: #161b22; stroke: #30363d; }
+      .rule { stroke: #30363d; }
+      .branch { fill: #2dd4bf; }
+      .branch-line { stroke: #2dd4bf; }
+      .icon { stroke: #71717a; }
+      .sel { fill: #115e59; }
+      .tile { stroke: #30363d; }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+
+  <!-- mark: the main checkout (grey) with two branches (teal) -->
+  <g transform="translate(40 92)">
+    <rect x="0.5" y="0.5" width="71" height="71" rx="16" fill="#18181b" class="tile"/>
+    <path d="M23 40 V31 Q23 23 31 23 H41 M32 49 H41" stroke="#fafafa" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="14" y="40" width="18" height="18" rx="5" fill="#a1a1aa"/>
+    <rect x="41" y="14" width="18" height="18" rx="5" fill="#2dd4bf"/>
+    <rect x="41" y="40" width="18" height="18" rx="5" fill="#2dd4bf"/>
+  </g>
+
+  <!-- wordmark and tagline -->
+  <text x="132" y="146" class="ink" font-size="56" font-weight="700" letter-spacing="-1.5">storyhub</text>
+  <text x="42" y="214" class="ink" font-size="26" font-weight="500">One Storybook for all your git worktrees.</text>
+  <text x="42" y="252" class="muted" font-size="19">Each branch gets a section with only the stories it changes.</text>
+  <text x="42" y="280" class="muted" font-size="19">One dev server. Vite and webpack. An MCP server for your agents.</text>
+
+  <!-- sidebar sketch -->
+  <g transform="translate(760 28)">
+    <rect x="0.5" y="0.5" width="399" height="283" rx="12" class="card"/>
+
+    <g transform="translate(22 34)">
+      <path d="M4 14 V6 Q4 2 8 2 H10 M4 10 H10" class="branch-line" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <text x="20" y="13" class="ink mono" font-size="15" font-weight="600">feat/pill-buttons</text>
+    </g>
+    <rect x="14" y="58" width="372" height="30" rx="6" class="sel"/>
+    <rect x="44" y="67" width="12" height="12" rx="2" stroke="#ffffff" fill="none" stroke-width="1.5"/>
+    <text x="66" y="78" fill="#ffffff" font-size="15">Button</text>
+    <rect x="44" y="99" width="12" height="12" rx="2" class="icon" stroke-width="1.5"/>
+    <text x="66" y="110" class="ink" font-size="15">Plan Card</text>
+
+    <line x1="14" y1="130" x2="386" y2="130" class="rule"/>
+
+    <g transform="translate(22 146)">
+      <path d="M4 14 V6 Q4 2 8 2 H10 M4 10 H10" class="branch-line" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <text x="20" y="13" class="ink mono" font-size="15" font-weight="600">fix/alert-contrast</text>
+    </g>
+    <rect x="44" y="179" width="12" height="12" rx="2" class="icon" stroke-width="1.5"/>
+    <text x="66" y="190" class="ink" font-size="15">Alert</text>
+
+    <line x1="14" y1="210" x2="386" y2="210" class="rule"/>
+
+    <text x="26" y="236" class="muted" font-size="15" font-weight="600">Common</text>
+    <rect x="44" y="249" width="12" height="12" rx="2" class="icon" stroke-width="1.5"/>
+    <text x="66" y="260" class="faint" font-size="15">Alert · Avatar · Badge · Button · Plan Card</text>
+  </g>
+</svg>

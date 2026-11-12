@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/TScafeJR/storyhub/main/docs/images/banner.svg" alt="storyhub: one Storybook for all your git worktrees" width="100%">
+
 # storyhub
 
 [![npm](https://img.shields.io/npm/v/storyhub)](https://www.npmjs.com/package/storyhub) [![license](https://img.shields.io/npm/l/storyhub)](LICENSE)
@@ -6,18 +8,13 @@ One Storybook for all your git worktrees.
 
 When you work on several UI changes at once, each in its own `git worktree`, storyhub puts them side by side in the Storybook you already run. Every worktree you opt in gets a section at the top of the sidebar that lists only the stories its changes affect. Your normal stories stay below under "Common".
 
-```
-⎇ feat/login              ← only the stories this branch changes
-  Components / Button
-  Components / LoginForm
-⎇ fix/toast · behind main
-  Components / Toast
-Common                    ← your main checkout, as usual
-  Components / Badge
-  ...
-```
+<img src="https://raw.githubusercontent.com/TScafeJR/storyhub/main/docs/images/storybook.png" alt="Storybook with three branch sections (fix/alert-contrast, feat/pill-buttons, feat/pricing-table) above the Common stories, showing the Plan Card story from feat/pill-buttons" width="100%">
 
 There is still one dev server, one dependency install and one module cache. Branch stories render from the worktree's changed files layered over your main checkout's modules. An MCP endpoint lets coding agents see which stories each branch changes, why, and where to view them.
+
+<img src="https://raw.githubusercontent.com/TScafeJR/storyhub/main/docs/images/compare.png" alt="The Plan Card story in Common with a square blue button, next to the same story in feat/pill-buttons with a rounded teal button and an arrow" width="100%">
+
+The same story in Common and in a branch that only changed `Button.tsx`. Plan Card shows up in the branch because it imports Button.
 
 ## Requirements
 
@@ -180,6 +177,8 @@ addons: [
 
 ## How it works
 
+<img src="https://raw.githubusercontent.com/TScafeJR/storyhub/main/docs/images/how-it-works.svg" alt="Import graph for feat/pill-buttons: Button.tsx changed; Button.stories.tsx, PlanCard.tsx and PlanCard.stories.tsx import it and load from the worktree; Alert and Badge stay shared with main. The branch section lists Button and Plan Card." width="100%">
+
 For each branch that is on, storyhub:
 
 1. Diffs the worktree, including uncommitted and untracked files, against its merge base with your main checkout.
@@ -217,6 +216,7 @@ pnpm lint           # oxlint, warnings fail the run (pnpm lint:fix applies safe 
 pnpm test           # unit tests against a generated fixture repo with real worktrees
 pnpm test:e2e       # builds, runs a real Storybook dev server, drives it with Playwright and the MCP SDK client
 pnpm fixture        # generate the fixture repo to explore by hand
+pnpm screenshots    # regenerate the README screenshots in docs/images from a demo design system
 ```
 
 This repo's own installs refuse package versions published less than 7 days ago and always save exact versions (see `pnpm-workspace.yaml`).
