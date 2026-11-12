@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { existsSync, watch, type FSWatcher } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { classifyDrift, mergeBase, workingChanges } from './diff.js';
 import { git } from './git.js';
 import { buildBranchGraph, buildHubGraph, importChain, ResolveCache, reverseClosure, SpecCache, type Edges, type GraphContext } from './graph.js';
@@ -234,7 +234,9 @@ export class StoryHub extends EventEmitter {
     private commonDir = '';
 
     private async startWatching(): Promise<void> {
-        this.commonDir = realpath(join(this.root, (await git(this.root, ['rev-parse', '--git-common-dir'])).trim()));
+        // relative (".git") from the main checkout but absolute from a linked worktree: resolve
+        // handles both, where join would glue an absolute path onto the root
+        this.commonDir = realpath(resolve(this.root, (await git(this.root, ['rev-parse', '--git-common-dir'])).trim()));
         // git metadata: HEAD/packed-refs at the top, plus refs/ and worktrees/ (both small trees)
         this.watchGit(this.commonDir, false);
         this.watchGit(join(this.commonDir, 'refs'), true);
