@@ -1,5 +1,11 @@
 # Changelog
 
+
+## 0.2.0 (2026-11-12)
+
+- Add an interactive release script (npm run release)
+- Rewrite docs for npm users; doctor and --version for installed setups
+
 ## 0.1.0
 
 First release.
