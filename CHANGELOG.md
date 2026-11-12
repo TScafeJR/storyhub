@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2 (2026-11-12)
+
+- Keep storyhub's dev-server routes for local use
+
 ## 0.5.1 (2026-11-12)
 
 - Add a logo, banner, how-it-works diagram and real screenshots to the README
