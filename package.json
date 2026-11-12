@@ -1,6 +1,6 @@
 {
   "name": "storyhub",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "One Storybook for all your git worktrees: opt-in branch sections that show only the stories each branch changes, for Vite and webpack, with a CLI and MCP server",
   "keywords": [
     "storybook",

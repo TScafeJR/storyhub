@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 (2026-11-12)
+
+- Add a logo, banner, how-it-works diagram and real screenshots to the README
+- Prepare for a public repo: security policy, credential ignores, roadmap for frameworks and TypeScript 7
+- Roadmap: long-term direction, 0.6 to 1.0 milestones and post-1.0 horizons
+
 ## 0.5.0 (2026-11-12)
 
 - Make storyhub the one MCP server agents need for Storybook
