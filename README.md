@@ -190,6 +190,8 @@ Edits in a worktree hot-reload in its section. Adding stories, changing imports,
 
 ## Limitations
 
+See [ROADMAP.md](ROADMAP.md) for what is planned for each of these.
+
 - A story that main added after a branch split does not appear in that branch, because the worktree does not have it.
 - `@storybook/addon-mcp` logs a "Skipping composed ref" warning at startup for each branch. It keeps working; use storyhub's MCP tools for branch data.
 - The sidebar is reordered visually. Keyboard focus order follows Storybook's DOM order, which puts Common first.
