@@ -2,10 +2,11 @@ import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeStories } from 'storybook/internal/common';
+import { loadPreviewOrConfigFile, normalizeStories } from 'storybook/internal/common';
 import type { InlineConfig, ViteDevServer } from 'vite';
 import type { StoryHub } from './core/state.js';
 import type { BranchSummary } from './core/types.js';
+import { isNodeModules, realpath, relInside } from './core/paths.js';
 import { gitToplevel, listWorktrees } from './core/worktrees.js';
 import { createMcpHandler } from './mcp/server.js';
 import { buildBranchIndex, isStoryFileFor, type IndexContext, type StoryIndex } from './server/branchIndex.js';
@@ -127,6 +128,7 @@ export const viteFinal = async (config: InlineConfig, options: PresetOptions) =>
         gitRoot: ctx.gitRoot,
         configDir: options.configDir,
         isStoryFile: isStoryFileFor(ctx),
+        previewFiles: await projectPreviewFiles(options, ctx.gitRoot),
         refBase: REF_BASE,
         log: msg => console.log(msg),
         onHub: (hub, server) => {
@@ -136,6 +138,20 @@ export const viteFinal = async (config: InlineConfig, options: PresetOptions) =>
     });
     return { ...config, plugins: [...(config.plugins ?? []), plugin] };
 };
+
+/** The project's own preview annotation files (not addons'), git-root relative. */
+async function projectPreviewFiles(options: PresetOptions, gitRoot: string): Promise<string[]> {
+    const entries: unknown[] = [...((await options.presets.apply<unknown[]>('previewAnnotations', [], options).catch(() => [])) ?? [])];
+    entries.push(loadPreviewOrConfigFile({ configDir: options.configDir }));
+    const out = new Set<string>();
+    for (const entry of entries) {
+        const abs = typeof entry === 'string' ? entry : (entry as { absolute?: string } | undefined)?.absolute;
+        if (!abs || isNodeModules(abs)) continue;
+        const rel = relInside(gitRoot, realpath(abs));
+        if (rel) out.add(rel);
+    }
+    return [...out];
+}
 
 async function hubIndex(options: PresetOptions): Promise<StoryIndex> {
     const generator = await options.presets.apply<{ getIndex(): Promise<StoryIndex> }>('storyIndexGenerator');

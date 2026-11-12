@@ -81,5 +81,7 @@ describe('classifyDrift', () => {
         expect(classifyDrift([{ rel: 'apps/web/.storybook/preview.tsx', kind: 'M' }], 'apps/web/.storybook', [])).toEqual(['config-drift']);
         expect(classifyDrift([{ rel: 'src/a.ts', kind: 'M' }], null, ['src/a.ts'])).toEqual(['diverged']);
         expect(classifyDrift([{ rel: 'src/a.ts', kind: 'M' }], null, [])).toEqual([]);
+        // preview files are rendered per branch, so changing them is not drift
+        expect(classifyDrift([{ rel: '.storybook/preview.tsx', kind: 'M' }], '.storybook', [], new Set(['.storybook/preview.tsx']))).toEqual([]);
     });
 });

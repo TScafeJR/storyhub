@@ -17,6 +17,7 @@ beforeAll(async () => {
         cwd: fx.hub,
         configDir: join(fx.hub, '.storybook'),
         isStoryFile: rel => /\.stories\.tsx$/.test(rel),
+        previewFiles: ['.storybook/preview.tsx'],
         resolve: viteResolver(server)
     });
 });
@@ -34,7 +35,7 @@ const branch = (id: string) => {
 
 describe('StoryHub on the fixture repo', () => {
     it('discovers every non-hub worktree as a branch', () => {
-        expect([...hub.branches.keys()]).toEqual(['feat-button', 'feat-label', 'feat-new', 'feat-ui']);
+        expect([...hub.branches.keys()]).toEqual(['feat-button', 'feat-label', 'feat-new', 'feat-theme', 'feat-ui']);
         expect(hub.hubStories.sort()).toEqual([
             'src/components/Badge.stories.tsx',
             'src/components/Button.stories.tsx',
@@ -81,6 +82,14 @@ describe('StoryHub on the fixture repo', () => {
         expect(b.affectedStories).toEqual(['src/components/Panel.stories.tsx']);
         expect(b.drift).toContain('deps-drift');
         expect(b.dirty.has('packages/ui/src/index.ts')).toBe(true);
+    });
+
+    it('a branch that dirties a preview import renders with its own preview copy', () => {
+        const b = branch('feat-theme');
+        expect(b.affectedStories).toEqual(['src/components/Button.stories.tsx', 'src/components/Card.stories.tsx']);
+        expect(b.previewOverrides).toEqual(['.storybook/preview.tsx']);
+        expect(b.drift).toEqual([]);
+        expect(branch('feat-button').previewOverrides).toEqual([]);
     });
 
     it('summaries expose ref URLs and counts', () => {

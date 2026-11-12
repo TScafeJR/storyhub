@@ -194,6 +194,12 @@ export const Default = {};
         },
         delete: ['src/components/Badge.stories.tsx']
     },
+    'feat-theme': {
+        commit: true,
+        // the preview decorator provides ThemeContext from this module: the branch must render with
+        // its own preview so provider and consumers share one context instance
+        files: { 'src/theme.ts': hubFiles['src/theme.ts'].replace("createContext('default')", "createContext('light')") }
+    },
     'feat-ui': {
         commit: true,
         files: {

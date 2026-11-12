@@ -41,6 +41,8 @@ export interface BranchState {
     dirty: Set<string>;
     /** Story files (git-root relative) whose rendering this branch changes. */
     affectedStories: string[];
+    /** Preview files (git-root relative) this branch must load from its worktree. */
+    previewOverrides: string[];
     /** Bare imports this branch adds that the hub cannot resolve. */
     missingDeps: string[];
     error?: string;

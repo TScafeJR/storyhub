@@ -9,11 +9,16 @@ import { viteResolver } from './resolver.js';
 export const IMPORT_PREFIX = 'storyhub:';
 export const RELOAD_EVENT = 'storyhub:reload';
 const STORIES_MODULE = 'storybook-stories.js';
+const ANNOTATIONS_MODULE = 'project-annotations.js';
+/** Matches `/__storyhub/<id>/` in a branch iframe's URL. */
+const BRANCH_FROM_LOCATION = `(typeof location !== 'undefined' && (location.pathname.match(/\\/__storyhub\\/([^/]+)\\//) || [])[1]) || null`;
 
 export interface StoryhubVitePluginOptions {
     gitRoot: string;
     configDir: string;
     isStoryFile: (rel: string) => boolean;
+    /** Git-root-relative preview annotation files of the project (see StoryHubOptions.previewFiles). */
+    previewFiles?: string[];
     refBase?: string;
     /** Called once the hub is ready (the dev server and its resolver exist). */
     onHub?: (hub: StoryHub, server: ViteDevServer) => void;
@@ -48,6 +53,53 @@ importFn = async function storyhubImportFn(path) {
 }
 
 /**
+ * Code appended to builder-vite's project-annotations module. In a branch iframe it loads that
+ * branch's copy of any preview file the branch dirties (for example a preview that provides a
+ * context whose module the branch changed) and hands them to getProjectAnnotations through the
+ * same override slot builder-vite uses for HMR. The hub iframe is untouched.
+ */
+export function previewOverridesCode(code: string, hub: StoryHub | undefined, root: string, gitRoot: string): string {
+    const specs = [...code.matchAll(/^\s*import \* as \w+ from ['"]([^'"]+)['"];?\s*$/gm)].map(m => m[1]);
+    const toRel = (spec: string): string | null => {
+        for (const candidate of [spec, join(root, spec)]) {
+            if (candidate.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(candidate)) {
+                if (existsSync(candidate)) return relInside(gitRoot, realpath(candidate));
+            }
+        }
+        return null;
+    };
+    const rels = specs.map(toRel);
+    const byBranch: string[] = [];
+    for (const b of hub?.branches.values() ?? []) {
+        const loaders: string[] = [];
+        rels.forEach((rel, i) => {
+            if (rel && b.previewOverrides.includes(rel)) loaders.push(`${i}: () => import(${JSON.stringify(join(b.worktree.path, rel))})`);
+        });
+        if (loaders.length) byBranch.push(`  ${JSON.stringify(b.worktree.id)}: { ${loaders.join(', ')} }`);
+    }
+    if (!byBranch.length) return '';
+    return `
+// --- storyhub: per-branch preview files ---
+const __storyhubPreviewOverrides = {
+${byBranch.join(',\n')}
+};
+const __storyhubBranch = ${BRANCH_FROM_LOCATION};
+const __storyhubPreviewModules = [];
+if (__storyhubBranch && __storyhubPreviewOverrides[__storyhubBranch]) {
+  for (const [i, load] of Object.entries(__storyhubPreviewOverrides[__storyhubBranch])) __storyhubPreviewModules[Number(i)] = await load();
+}
+if (__storyhubPreviewModules.length) {
+  const __storyhubOriginalGetProjectAnnotations = getProjectAnnotations;
+  getProjectAnnotations = function storyhubGetProjectAnnotations(hmrPreviewAnnotationModules = []) {
+    const merged = [...hmrPreviewAnnotationModules];
+    __storyhubPreviewModules.forEach((m, i) => { if (m) merged[i] = m; });
+    return __storyhubOriginalGetProjectAnnotations(merged);
+  };
+}
+`;
+}
+
+/**
  * Serves each worktree's changed files on top of the hub's modules.
  *
  * Imports made from a worktree module resolve as if made from the hub's twin of that file, so
@@ -61,6 +113,9 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
     let server: ViteDevServer | undefined;
     let allow: string[] | undefined;
     const structure = new Map<string, string>();
+    let previewFingerprint = '';
+    let viteRoot = process.cwd();
+    const previewFp = () => JSON.stringify([...(hub?.branches.values() ?? [])].map(b => [b.worktree.id, b.previewOverrides]));
 
     const allowRoots = (roots: string[]) => {
         if (!allow) return;
@@ -71,8 +126,11 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
         if (!hub || !server) return;
         allowRoots(hub.worktrees.map(w => w.path));
         // builder-vite regenerates (and HMR-patches) the virtual stories module on this event
+        const fp = previewFp();
+        const previewsChanged = fp !== previewFingerprint;
+        previewFingerprint = fp;
         for (const id of server.moduleGraph.idToModuleMap.keys()) {
-            if (id.endsWith(STORIES_MODULE)) server.watcher.emit('change', id);
+            if (id.endsWith(STORIES_MODULE) || (previewsChanged && id.endsWith(ANNOTATIONS_MODULE))) server.watcher.emit('change', id);
         }
         const reload: string[] = [];
         const seen = new Set<string>();
@@ -99,6 +157,7 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
             cwd: opts.gitRoot,
             configDir: opts.configDir,
             isStoryFile: opts.isStoryFile,
+            previewFiles: opts.previewFiles,
             resolve: viteResolver(server),
             refBase: opts.refBase,
             watch: { hub: false },
@@ -108,6 +167,7 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
         }).then(h => {
             hub = h;
             for (const b of h.branches.values()) structure.set(b.worktree.id, JSON.stringify([[...b.dirty].sort(), b.affectedStories]));
+            previewFingerprint = previewFp();
             allowRoots(h.worktrees.map(w => w.path));
             server!.watcher.on('all', (event, file) => h.notify(event, file));
             h.on('change', onChange);
@@ -134,6 +194,7 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
 
         configResolved(config) {
             allow = config.server.fs.allow as string[];
+            viteRoot = config.root;
         },
 
         configureServer(s) {
@@ -175,8 +236,12 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
         },
 
         transform(code, id) {
-            if (!id.endsWith(STORIES_MODULE) || !code.includes('importFn')) return null;
-            return { code: code + branchImportersCode(hub), map: null };
+            if (id.endsWith(STORIES_MODULE) && code.includes('importFn')) return { code: code + branchImportersCode(hub), map: null };
+            if (id.endsWith(ANNOTATIONS_MODULE) && code.includes('getProjectAnnotations')) {
+                const extra = previewOverridesCode(code, hub, viteRoot, opts.gitRoot);
+                return extra ? { code: code + extra, map: null } : null;
+            }
+            return null;
         }
     };
 }

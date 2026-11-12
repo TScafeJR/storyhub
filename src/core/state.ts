@@ -15,6 +15,11 @@ export interface StoryHubOptions {
     configDir?: string;
     /** Whether a git-root-relative path is a story file Storybook would index. */
     isStoryFile: (rel: string) => boolean;
+    /**
+     * Git-root-relative project files Storybook loads into every preview (e.g. .storybook/preview.tsx).
+     * They join the import graph so a branch that dirties something they import gets its own copy.
+     */
+    previewFiles?: string[];
     resolve: ResolveFn;
     /** URL prefix the branch refs are served from. */
     refBase?: string;
@@ -90,7 +95,8 @@ export class StoryHub extends EventEmitter {
         const hubHead = (await git(this.root, ['rev-parse', 'HEAD'])).trim();
         const files = (await git(this.root, ['ls-files', '-co', '--exclude-standard', '-z'])).split('\0').filter(Boolean);
         const hubStories = files.filter(rel => this.opts.isStoryFile(rel));
-        const hubEdges = await buildHubGraph(this.ctx, hubStories);
+        const previewFiles = this.opts.previewFiles ?? [];
+        const hubEdges = await buildHubGraph(this.ctx, [...hubStories, ...previewFiles]);
         const hubSideByBase = new Map<string, Promise<FileChange[]>>();
 
         const branches = new Map<string, InternalBranch>();
@@ -108,7 +114,7 @@ export class StoryHub extends EventEmitter {
         this.branches = new Map([...branches].sort(([a], [b]) => a.localeCompare(b)));
         this.syncWatchers();
 
-        const fingerprint = JSON.stringify([...this.branches.values()].map(b => [b.worktree, b.mergeBase, b.changes, b.drift, b.affectedStories, b.error]));
+        const fingerprint = JSON.stringify([...this.branches.values()].map(b => [b.worktree, b.mergeBase, b.changes, b.drift, b.affectedStories, b.previewOverrides, b.error]));
         if (fingerprint !== this.lastFingerprint) {
             this.lastFingerprint = fingerprint;
             this.opts.log?.(`storyhub: ${this.branches.size} branch(es) refreshed in ${Date.now() - started}ms`);
@@ -123,7 +129,7 @@ export class StoryHub extends EventEmitter {
         hubEdges: Edges,
         hubSideByBase: Map<string, Promise<FileChange[]>>
     ): Promise<InternalBranch> {
-        const empty: InternalBranch = { worktree: wt, mergeBase: '', changes: [], drift: [], diverged: [], dirty: new Set(), affectedStories: [], missingDeps: [], edges: new Map() };
+        const empty: InternalBranch = { worktree: wt, mergeBase: '', changes: [], drift: [], diverged: [], dirty: new Set(), affectedStories: [], previewOverrides: [], missingDeps: [], edges: new Map() };
         try {
             const base = await mergeBase(this.root, hubHead, wt.head);
             if (!base) return { ...empty, error: 'no common history with the hub checkout' };
@@ -137,14 +143,16 @@ export class StoryHub extends EventEmitter {
             const entries = new Set(hubStories.filter(s => !deleted.has(s)));
             for (const c of changes) if (c.kind !== 'D' && this.opts.isStoryFile(c.rel)) entries.add(c.rel);
 
-            const graph = await buildBranchGraph(this.ctx, hubEdges, wt.path, changes, [...entries]);
+            const previewFiles = this.opts.previewFiles ?? [];
+            const graph = await buildBranchGraph(this.ctx, hubEdges, wt.path, changes, [...entries, ...previewFiles]);
             const dirty = reverseClosure(graph.edges, changes.map(c => c.rel));
             // A story main added after this branch split is unchanged here but absent from the
             // worktree; it cannot render in the branch's module namespace, so it is not offered.
             const affectedStories = [...entries].filter(s => dirty.has(s) && existsSync(join(wt.path, s))).sort();
-            const drift = classifyDrift(changes, this.configDirRel, diverged);
+            const drift = classifyDrift(changes, this.configDirRel, diverged, new Set(previewFiles));
+            const previewOverrides = previewFiles.filter(f => dirty.has(f) && existsSync(join(wt.path, f)));
             if (graph.missingDeps.length) drift.push('missing-dep');
-            return { worktree: wt, mergeBase: base, changes, drift, diverged, dirty, affectedStories, missingDeps: graph.missingDeps, edges: graph.edges };
+            return { worktree: wt, mergeBase: base, changes, drift, diverged, dirty, affectedStories, previewOverrides, missingDeps: graph.missingDeps, edges: graph.edges };
         } catch (err) {
             return { ...empty, error: err instanceof Error ? err.message : String(err) };
         }

@@ -92,6 +92,7 @@ describe('storyhub in a real Storybook', () => {
             ['⎇ feat-button', ['Button', 'Card']],
             ['⎇ feat-label', ['Card']],
             ['⎇ feat-new', ['Chip']],
+            ['⎇ feat-theme', ['Button', 'Card']],
             ['⎇ feat-ui · deps changed', ['Panel']],
             ['Common', ['Badge', 'Default', 'Button', 'Card', 'Late', 'Panel']]
         ]);
@@ -114,6 +115,10 @@ describe('storyhub in a real Storybook', () => {
         expect(label).toContain('Go v1');
         expect(await renderedRoot(page, '/__storyhub/feat-new/iframe.html?id=components-chip--default&viewMode=story', '[data-testid=chip]')).toContain('chip');
         expect(await renderedRoot(page, '/__storyhub/feat-ui/iframe.html?id=components-panel--default&viewMode=story', '[data-testid=box]')).toContain('data-version="2"');
+        // feat-theme changes the module the preview's ThemeContext provider comes from; the branch
+        // loads its own preview, so the provider still reaches the branch's consumers
+        expect(await renderedRoot(page, '/__storyhub/feat-theme/iframe.html?id=components-button--primary&viewMode=story', '[data-testid=button]')).toContain('data-theme="dark"');
+        expect(await renderedRoot(page, '/iframe.html?id=components-button--primary&viewMode=story', '[data-testid=button]')).toContain('data-theme="dark"');
         await page.close();
     });
 
@@ -190,7 +195,7 @@ describe('storyhub in a real Storybook', () => {
 
         const text = (r: unknown) => JSON.parse((r as { content: Array<{ text: string }> }).content[0].text);
         const list = text(await client.callTool({ name: 'list-branches', arguments: {} }));
-        expect(list.branches.map((b: { id: string }) => b.id)).toEqual(expect.arrayContaining(['feat-button', 'feat-label', 'feat-new', 'feat-ui']));
+        expect(list.branches.map((b: { id: string }) => b.id)).toEqual(expect.arrayContaining(['feat-button', 'feat-label', 'feat-new', 'feat-theme', 'feat-ui']));
 
         const changes = text(await client.callTool({ name: 'get-branch-changes', arguments: { branch: 'feat-label' } }));
         expect(changes.changes).toEqual([{ rel: 'src/components/Label.tsx', kind: 'M' }]);
@@ -202,7 +207,7 @@ describe('storyhub in a real Storybook', () => {
 
         const variants = text(await client.callTool({ name: 'get-story-variants', arguments: { storyId: 'components-card--default' } }));
         expect(variants.hub.iframeUrl).toBe(`${base}/iframe.html?id=components-card--default&viewMode=story`);
-        expect(variants.variants.map((v: { branch: string }) => v.branch).sort()).toEqual(['feat-button', 'feat-label']);
+        expect(variants.variants.map((v: { branch: string }) => v.branch).sort()).toEqual(['feat-button', 'feat-label', 'feat-theme']);
         const page = await browser.newPage();
         await page.goto(variants.variants.find((v: { branch: string }) => v.branch === 'feat-label').iframeUrl);
         await page.waitForSelector('[data-testid=label]');

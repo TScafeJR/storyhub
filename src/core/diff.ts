@@ -32,13 +32,17 @@ export async function workingChanges(cwd: string, base: string): Promise<FileCha
     return tracked.sort((x, y) => x.rel.localeCompare(y.rel));
 }
 
-export function classifyDrift(changes: FileChange[], configDirRel: string | null, diverged: string[]): DriftFlag[] {
+/**
+ * `applied` lists config-dir files storyhub renders per branch (preview files); changing those is
+ * not drift. Anything else under the config dir (main.ts, manager.ts, ...) is.
+ */
+export function classifyDrift(changes: FileChange[], configDirRel: string | null, diverged: string[], applied: Set<string> = new Set()): DriftFlag[] {
     const flags = new Set<DriftFlag>();
     const configPrefix = configDirRel ? `${configDirRel.replace(/\/$/, '')}/` : null;
     for (const { rel } of changes) {
         const base = rel.split('/').pop() ?? rel;
         if (LOCKFILES.has(base)) flags.add('deps-drift');
-        if (configPrefix && rel.startsWith(configPrefix)) flags.add('config-drift');
+        if (configPrefix && rel.startsWith(configPrefix) && !applied.has(rel)) flags.add('config-drift');
     }
     if (diverged.length) flags.add('diverged');
     return [...flags];
