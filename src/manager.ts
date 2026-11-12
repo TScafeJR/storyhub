@@ -42,35 +42,54 @@ const globalRefs = (): Record<string, RefLike> => {
     return (g.REFS ??= {});
 };
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 addons.register('storyhub', api => {
-    // Storybook copies the startup REFS into its store asynchronously. Adding or removing a ref
-    // before that finishes makes its ref ordering produce undefined entries (the sidebar crashes),
-    // so every sync first waits until the store holds every key REFS has.
-    const refsReady = async () => {
-        for (let i = 0; i < 200; i++) {
-            const current = api.getRefs() as Record<string, unknown>;
-            if (Object.keys(globalRefs()).every(k => current[k])) return;
-            await new Promise(r => setTimeout(r, 50));
+    const stored = () => api.getRefs() as Record<string, RefLike & { type?: string }>;
+
+    /*
+     * Storybook's updateRef rebuilds the ref list from the keys of the startup REFS object, reading
+     * each ref from a store that only updates on React's next render. A key that is in REFS before
+     * its ref reaches the store therefore rebuilds as undefined and crashes the sidebar. Two rules
+     * keep that from happening:
+     *  1. Change nothing until Storybook has finished its own startup checks (every startup ref is
+     *     in the store with a resolved type), since those run updateRef concurrently.
+     *  2. A new key stays non-enumerable (invisible to that rebuild) except during our own
+     *     synchronous setRef, and becomes visible only once the store holds its ref.
+     */
+    const startupSettled = async () => {
+        for (let i = 0; i < 300; i++) {
+            const current = stored();
+            if (Object.keys(globalRefs()).every(k => current[k] && current[k].type !== 'unknown')) return;
+            await sleep(50);
+        }
+    };
+
+    const insertRef = async (ref: RefLike) => {
+        const REFS = globalRefs();
+        for (let attempt = 0; attempt < 40; attempt++) {
+            Object.defineProperty(REFS, ref.id, { value: ref, enumerable: true, configurable: true, writable: true });
+            void api.setRef(ref.id, { ...ref, type: 'unknown' } as never); // reaches updateRef synchronously
+            Object.defineProperty(REFS, ref.id, { value: ref, enumerable: false, configurable: true, writable: true });
+            for (let wait = 0; wait < 10 && !stored()[ref.id]; wait++) await sleep(20);
+            if (stored()[ref.id]) {
+                Object.defineProperty(REFS, ref.id, { value: ref, enumerable: true, configurable: true, writable: true });
+                return;
+            }
+            // another update rebuilt the list while the key was hidden and dropped it; try again
         }
     };
 
     let syncing = Promise.resolve();
     const sync = (branches: BranchSummary[]) => {
         syncing = syncing.then(async () => {
-            await refsReady();
+            await startupSettled();
             const REFS = globalRefs();
-            const current = api.getRefs() as Record<string, RefLike>;
+            const current = stored();
             const wanted = new Set(branches.map(b => b.id));
             for (const b of branches) {
                 const title = titleFor(b);
-                if (!REFS[b.id] || !current[b.id]) {
-                    // The manager orders (and keeps) refs by the keys of its startup REFS object, so a
-                    // new ref must enter REFS and the store in the same tick: setRef runs updateRef
-                    // synchronously, before any other update can observe a key without state.
-                    const ref = { id: b.id, title, url: b.refUrl, expanded: true };
-                    REFS[b.id] = ref;
-                    void api.setRef(b.id, { ...ref, type: 'unknown' } as never);
-                }
+                if (!current[b.id]) await insertRef({ id: b.id, title, url: b.refUrl, expanded: true });
                 await api.checkRef({ id: b.id, url: b.refUrl, title, expanded: current[b.id]?.expanded ?? true, type: 'unknown' } as never);
                 await api.updateRef(b.id, { title } as never);
             }
