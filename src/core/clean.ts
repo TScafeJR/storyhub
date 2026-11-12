@@ -49,6 +49,10 @@ export async function findCleanupCandidates(cwd: string, opts: CleanOptions = {}
     const candidates: CleanCandidate[] = [];
     const prunable: string[] = [];
 
+    // commits on the base's mainline: a HEAD here never diverged (an idle branch or a detached
+    // checkout of main), as opposed to a feature branch that was merged in from the side
+    const mainline = new Set((await git(main, ['rev-list', '--first-parent', '--max-count=20000', base])).split('\n').filter(Boolean));
+
     for (const e of entries.slice(1)) {
         if (e.bare) continue;
         if (e.prunable || !existsSync(e.path)) {
@@ -61,7 +65,7 @@ export async function findCleanupCandidates(cwd: string, opts: CleanOptions = {}
 
         const ancestor = (await gitTry(main, ['merge-base', '--is-ancestor', e.head, base])) !== null;
         if (ancestor) {
-            reasons.push(`merged into ${base}`);
+            reasons.push(mainline.has(e.head) ? `no commits of its own (sits on ${base})` : `merged into ${base}`);
         } else {
             const mb = (await gitTry(main, ['merge-base', base, e.head]))?.trim();
             if (mb) {

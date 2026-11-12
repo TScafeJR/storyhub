@@ -115,6 +115,7 @@ describe('storyhub clean', () => {
         expect(by('feat-new').reasons).toEqual(['changes already in main (squash/rebase merged)']);
         expect(by('feat-new').removable).toBe(true);
         // feat-label has no commits (so it is "merged") but uncommitted work: never removed
+        expect(by('feat-label').reasons).toEqual(['no commits of its own (sits on main)']);
         expect(by('feat-label').removable).toBe(false);
         expect(by('feat-label').blockers[0]).toContain('uncommitted changes');
         expect(by('feat-ui').reasons).toEqual([]);
