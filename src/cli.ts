@@ -211,8 +211,9 @@ async function doctor() {
     const configDir = join(cwd, flag('-c') ?? flag('--config-dir') ?? '.storybook');
     const mainFile = ['main.ts', 'main.js', 'main.mjs', 'main.cjs', 'main.mts', 'main.cts'].map(f => join(configDir, f)).find(f => existsSync(f));
     const mainText = mainFile ? readFileSync(mainFile, 'utf8') : '';
-    const framework = deps.find(d => /^@storybook\/[\w-]+-vite$/.test(d) || d === '@storybook/builder-vite') ?? /@storybook\/[\w-]+-vite/.exec(mainText)?.[0];
-    checks.push(['vite-based framework', Boolean(framework), framework ?? 'storyhub needs a Vite-based Storybook framework such as @storybook/react-vite']);
+    const builderRe = /^@storybook\/[\w-]+-(vite|webpack5)$|^@storybook\/builder-(vite|webpack5)$/;
+    const framework = deps.find(d => builderRe.test(d)) ?? /@storybook\/[\w-]+-(vite|webpack5)/.exec(mainText)?.[0];
+    checks.push(['vite or webpack 5 framework', Boolean(framework), framework ?? 'storyhub needs a Vite or webpack 5 based framework, e.g. @storybook/react-vite or @storybook/react-webpack5']);
     checks.push(['storyhub installed here', deps.includes('storyhub'), deps.includes('storyhub') ? 'yes' : 'add it as a devDependency of this package: npm install -D -E storyhub']);
     if (!mainFile) checks.push(['storybook config', false, `no main.* in ${configDir} (pass -c <dir> if it lives elsewhere)`]);
     else checks.push(['addon registered', /['"]storyhub['"]/.test(mainText), /['"]storyhub['"]/.test(mainText) ? mainFile : `add 'storyhub' to addons in ${mainFile}`]);

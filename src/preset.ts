@@ -4,6 +4,7 @@ import { basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadPreviewOrConfigFile, normalizeStories } from 'storybook/internal/common';
 import type { InlineConfig, ViteDevServer } from 'vite';
+import type { Configuration } from 'webpack';
 import type { StoryHub } from './core/state.js';
 import type { BranchSummary } from './core/types.js';
 import { isNodeModules, realpath, relInside } from './core/paths.js';
@@ -11,7 +12,6 @@ import { isSelected, readSelection, type SelectionOptions } from './core/selecti
 import { gitToplevel, listWorktrees } from './core/worktrees.js';
 import { createMcpHandler } from './mcp/server.js';
 import { buildBranchIndex, isStoryFileFor, type IndexContext, type StoryIndex } from './server/branchIndex.js';
-import { storyhubVitePlugin } from './vite/plugin.js';
 
 export const REF_BASE = '/__storyhub';
 export const MCP_PATH = '/storyhub/mcp';
@@ -134,6 +134,8 @@ export const viteFinal = async (config: InlineConfig, options: PresetOptions) =>
     const ctx = await indexContext(options).catch(() => null);
     if (!ctx) return config; // not a git checkout: stay out of the way
     const s = session(options.configDir);
+    // loaded on demand so webpack projects never import vite (and vice versa)
+    const { storyhubVitePlugin } = await import('./vite/plugin.js');
     const plugin = storyhubVitePlugin({
         gitRoot: ctx.gitRoot,
         configDir: options.configDir,
@@ -163,6 +165,24 @@ async function projectPreviewFiles(options: PresetOptions, gitRoot: string): Pro
     }
     return [...out];
 }
+
+export const webpackFinal = async (config: Configuration, options: PresetOptions) => {
+    if (!isDev(options)) return config;
+    const ctx = await indexContext(options).catch(() => null);
+    if (!ctx) return config; // not a git checkout: stay out of the way
+    const s = session(options.configDir);
+    const { storyhubWebpackFinal } = await import('./webpack/plugin.js');
+    return storyhubWebpackFinal(config, {
+        gitRoot: ctx.gitRoot,
+        configDir: options.configDir,
+        isStoryFile: isStoryFileFor(ctx),
+        previewFiles: await projectPreviewFiles(options, ctx.gitRoot),
+        selection: selectionOptions(options),
+        refBase: REF_BASE,
+        log: msg => console.log(msg),
+        onHub: hub => s.hub.resolve(hub)
+    });
+};
 
 async function hubIndex(options: PresetOptions): Promise<StoryIndex> {
     const generator = await options.presets.apply<{ getIndex(): Promise<StoryIndex> }>('storyIndexGenerator');

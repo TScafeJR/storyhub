@@ -11,7 +11,7 @@ export interface Fixture {
     worktrees: Record<string, string>;
 }
 
-export function makeFixture(opts: { install?: boolean; library?: boolean; scenarios?: string[] } = {}): Fixture {
+export function makeFixture(opts: { install?: boolean; library?: boolean; scenarios?: string[]; builder?: 'vite' | 'webpack' } = {}): Fixture {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), 'storyhub-')));
     return createFixture({ dir, ...opts }) as Fixture;
 }

@@ -5,7 +5,7 @@ import { loadCsf } from 'storybook/internal/csf-tools';
 import { userOrAutoTitleFromSpecifier } from 'storybook/internal/preview-api';
 import type { InternalBranch } from '../core/state.js';
 import { relInside, toPosix } from '../core/paths.js';
-import { IMPORT_PREFIX } from '../vite/plugin.js';
+import { IMPORT_PREFIX } from '../codegen.js';
 
 export interface IndexEntry {
     type: 'story' | 'docs';

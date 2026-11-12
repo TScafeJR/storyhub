@@ -21,7 +21,7 @@ There is still one dev server, one dependency install and one module cache. Bran
 
 ## Requirements
 
-- Storybook 10.5 or newer with a Vite-based framework. Tested with `@storybook/react-vite` on Vite 6 and 8. Other Vite frameworks should work but are untested so far.
+- Storybook 10.5 or newer with a Vite or webpack 5 based framework. Tested with `@storybook/react-vite` (Vite 6 and 8) and `@storybook/react-webpack5` (webpack 5.112, SWC compiler). Other frameworks on those builders should work but are untested so far.
 - Node 20.19 or newer.
 - Your branches are worktrees of the repo that runs Storybook (`git worktree add ../my-feature -b my-feature`).
 
@@ -170,9 +170,9 @@ addons: [
 For each branch that is on, storyhub:
 
 1. Diffs the worktree, including uncommitted and untracked files, against its merge base with your main checkout.
-2. Walks the import graph from every story file, using Vite's own resolver, so aliases, tsconfig paths and workspace packages behave as they do in your app.
+2. Walks the import graph from every story file, using your builder's own resolver (Vite's or webpack's), so aliases, tsconfig paths and workspace packages behave as they do in your app.
 3. Marks a file dirty when it changed or imports something that did. The dirty story files are what the branch's section shows.
-4. Serves the branch as a Storybook composition ref from the same dev server. Imports from branch modules resolve as they would in your main checkout. A target loads from the worktree only if it is dirty; otherwise the main checkout's module is shared. Unchanged code is never transformed twice, and React contexts stay single instances.
+4. Serves the branch as a Storybook composition ref from the same dev server. Imports from branch modules resolve as they would in your main checkout. A target loads from the worktree only if it is dirty; otherwise the main checkout's module is shared. Unchanged code is never transformed twice, and React contexts stay single instances. With webpack, loader rules (`include`, `exclude`, `test`) are evaluated against the main checkout's path for worktree files, so they get the same loaders.
 5. If a branch dirties something your `.storybook/preview` imports, such as a context provider, that branch's iframe loads the worktree's copy of the preview so providers and consumers match.
 
 Edits in a worktree hot-reload in its section. Adding stories, changing imports, or turning a branch on or off updates the sidebar live.
@@ -190,7 +190,6 @@ Edits in a worktree hot-reload in its section. Adding stories, changing imports,
 
 ## Limitations
 
-- Vite builder only for now.
 - A story that main added after a branch split does not appear in that branch, because the worktree does not have it.
 - `@storybook/addon-mcp` logs a "Skipping composed ref" warning at startup for each branch. It keeps working; use storyhub's MCP tools for branch data.
 - The sidebar is reordered visually. Keyboard focus order follows Storybook's DOM order, which puts Common first.

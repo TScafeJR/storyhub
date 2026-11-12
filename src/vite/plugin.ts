@@ -5,13 +5,11 @@ import { cleanId, isNodeModules, isRelativeSpec, realpath, relInside } from '../
 import { StoryHub } from '../core/state.js';
 import { isSelected, readSelection, type SelectionOptions } from '../core/selection.js';
 import { listWorktrees } from '../core/worktrees.js';
+import { BRANCH_FROM_LOCATION, branchImportersCode } from '../codegen.js';
 import { viteResolver } from './resolver.js';
 
-export const IMPORT_PREFIX = 'storyhub:';
 const STORIES_MODULE = 'storybook-stories.js';
 const ANNOTATIONS_MODULE = 'project-annotations.js';
-/** Matches `/__storyhub/<id>/` in a branch iframe's URL. */
-const BRANCH_FROM_LOCATION = `(typeof location !== 'undefined' && (location.pathname.match(/\\/__storyhub\\/([^/]+)\\//) || [])[1]) || null`;
 
 export interface StoryhubVitePluginOptions {
     gitRoot: string;
@@ -24,33 +22,6 @@ export interface StoryhubVitePluginOptions {
     /** Called once the hub is ready (the dev server and its resolver exist). */
     onHub?: (hub: StoryHub, server: ViteDevServer) => void;
     log?: (msg: string) => void;
-}
-
-/** Code appended to builder-vite's virtual stories module so the preview can import branch stories. */
-export function branchImportersCode(hub: StoryHub | undefined): string {
-    const entries: string[] = [];
-    for (const b of hub?.branches.values() ?? []) {
-        for (const rel of b.affectedStories) {
-            const abs = join(b.worktree.path, rel);
-            // a missing path would fail import analysis for the whole module, hub stories included
-            if (!existsSync(abs)) continue;
-            entries.push(`  ${JSON.stringify(IMPORT_PREFIX + abs)}: () => import(${JSON.stringify(abs)})`);
-        }
-    }
-    return `
-// --- storyhub: branch story importers ---
-const __storyhubImporters = {
-${entries.join(',\n')}
-};
-const __storyhubOriginalImportFn = importFn;
-importFn = async function storyhubImportFn(path) {
-  if (typeof path === 'string' && path.startsWith(${JSON.stringify(IMPORT_PREFIX)})) {
-    const load = __storyhubImporters[path];
-    return load ? await load() : await import(/* @vite-ignore */ '/@fs' + path.slice(${IMPORT_PREFIX.length}));
-  }
-  return await __storyhubOriginalImportFn(path);
-};
-`;
 }
 
 /**

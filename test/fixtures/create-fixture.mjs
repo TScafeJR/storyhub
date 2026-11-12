@@ -28,30 +28,36 @@ const write = (root, files) => {
 };
 
 const libPkg = JSON.parse(readFileSync(join(libRoot, 'package.json'), 'utf8'));
-const depsManifest = {
-    name: 'storyhub-fixture-deps',
-    private: true,
-    type: 'module',
-    dependencies: {
-        react: libPkg.devDependencies.react,
-        'react-dom': libPkg.devDependencies['react-dom'],
-        storybook: libPkg.devDependencies.storybook,
-        '@storybook/react-vite': libPkg.devDependencies.storybook,
-        vite: libPkg.devDependencies.vite,
-        typescript: libPkg.devDependencies.typescript,
-        ...libPkg.dependencies
+const common = {
+    react: libPkg.devDependencies.react,
+    'react-dom': libPkg.devDependencies['react-dom'],
+    storybook: libPkg.devDependencies.storybook,
+    typescript: libPkg.devDependencies.typescript,
+    ...libPkg.dependencies
+};
+/** Dependencies per builder; exact versions, installed under the 7-day release-age rule. */
+const depsManifests = {
+    vite: { '@storybook/react-vite': libPkg.devDependencies.storybook, vite: libPkg.devDependencies.vite },
+    webpack: {
+        '@storybook/react-webpack5': libPkg.devDependencies.storybook,
+        '@storybook/addon-webpack5-compiler-swc': '4.0.3',
+        '@swc/core': '1.16.21',
+        webpack: libPkg.devDependencies.webpack
     }
 };
+const manifestFor = builder => ({ name: `storyhub-fixture-deps-${builder}`, private: true, type: 'module', dependencies: { ...common, ...depsManifests[builder] } });
+const depsManifest = manifestFor('vite');
 
 /** Installs fixture dependencies once (hoisted node_modules, like npm/yarn) and returns the dir. */
-export function ensureDeps() {
+export function ensureDeps(builder = 'vite') {
+    const depsManifest = manifestFor(builder);
     const hash = createHash('sha1').update(JSON.stringify(depsManifest)).digest('hex').slice(0, 10);
     const dir = join(cacheRoot, `deps-${hash}`);
     if (existsSync(join(dir, 'node_modules/.storyhub-ready'))) return dir;
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'package.json'), JSON.stringify(depsManifest, null, 2));
-    writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'onlyBuiltDependencies:\n  - esbuild\n');
+    writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'onlyBuiltDependencies:\n  - esbuild\n  - \'@swc/core\'\n');
     execFileSync('pnpm', ['install', '--config.node-linker=hoisted', '--config.minimum-release-age=10080', '--ignore-workspace'], { cwd: dir, stdio: 'inherit' });
     writeFileSync(join(dir, 'node_modules/.storyhub-ready'), '');
     return dir;
@@ -173,6 +179,31 @@ export const Default = {};
 `
 };
 
+/** Storybook config for the webpack variant (React + SWC); everything else is shared. */
+const webpackMain = `import { fileURLToPath } from 'node:url';
+import type { StorybookConfig } from '@storybook/react-webpack5';
+
+const config: StorybookConfig = {
+    stories: ['../src/**/*.stories.tsx'],
+    addons: ['@storybook/addon-webpack5-compiler-swc', 'storyhub'],
+    framework: '@storybook/react-webpack5',
+    core: { disableTelemetry: true },
+    webpackFinal: async webpack => {
+        webpack.resolve ??= {};
+        webpack.resolve.alias = { ...(webpack.resolve.alias as object), '@': fileURLToPath(new URL('../src', import.meta.url)) };
+        return webpack;
+    }
+};
+export default config;
+`;
+
+const filesFor = builder => {
+    if (builder !== 'webpack') return hubFiles;
+    const pkg = JSON.parse(hubFiles['package.json']);
+    pkg.devDependencies = { storybook: common.storybook, '@storybook/react-webpack5': common.storybook, '@storybook/addon-webpack5-compiler-swc': '4.0.3', storyhub: libPkg.version };
+    return { ...hubFiles, '.storybook/main.ts': webpackMain, 'package.json': JSON.stringify(pkg, null, 2) + '\n' };
+};
+
 /** Scenario worktrees: name → { files to write, files to delete, commit? } */
 export const scenarios = {
     'feat-button': {
@@ -213,19 +244,20 @@ export const Default = {};
 
 /**
  * Creates the fixture under `dir` and returns its paths.
- * @param {{ dir: string, scenarios?: string[], install?: boolean, library?: boolean }} opts
+ * @param {{ dir: string, scenarios?: string[], install?: boolean, library?: boolean, builder?: 'vite' | 'webpack' }} opts
  */
-export function createFixture({ dir, scenarios: only = Object.keys(scenarios), install = true, library = install }) {
+export function createFixture({ dir, scenarios: only = Object.keys(scenarios), install = true, library = install, builder = 'vite' }) {
     rmSync(dir, { recursive: true, force: true });
     const hub = join(dir, 'hub');
     mkdirSync(hub, { recursive: true });
-    write(hub, hubFiles);
+    const files = filesFor(builder);
+    write(hub, files);
     git(hub, 'init', '-q', '-b', 'main');
     git(hub, 'add', '-A');
     git(hub, 'commit', '-q', '-m', 'init');
 
     if (install) {
-        const deps = ensureDeps();
+        const deps = ensureDeps(builder);
         cloneDir(join(deps, 'node_modules'), join(hub, 'node_modules'));
         mkdirSync(join(hub, 'node_modules/@fixture'), { recursive: true });
         symlinkSync('../../packages/ui', join(hub, 'node_modules/@fixture/ui'));
@@ -258,7 +290,8 @@ export function createFixture({ dir, scenarios: only = Object.keys(scenarios), i
 export { git as runGit };
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    const dir = resolve(process.argv[2] ?? join(cacheRoot, 'fixture'));
-    const result = createFixture({ dir, install: !process.argv.includes('--no-install') });
+    const dir = resolve(process.argv.slice(2).find(a => !a.startsWith('--')) ?? join(cacheRoot, 'fixture'));
+    const builder = process.argv.includes('--webpack') ? 'webpack' : 'vite';
+    const result = createFixture({ dir, builder, install: !process.argv.includes('--no-install') });
     console.log(JSON.stringify(result, null, 2));
 }
