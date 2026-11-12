@@ -11,6 +11,9 @@
     "worktree",
     "mcp"
   ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -35,20 +38,13 @@
     "test:e2e": "npm run build && vitest run --project e2e",
     "fixture": "node test/fixtures/create-fixture.mjs"
   },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.2",
-    "chokidar": "5.0.0",
-    "oxc-parser": "0.158.0",
-    "picomatch": "4.0.3",
-    "zod": "4.6.7"
-  },
   "peerDependencies": {
     "storybook": "^10.5.0",
     "vite": "^6.0.0 || ^7.0.0 || ^8.0.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@types/node": "22.19.1",
-    "@types/picomatch": "4.0.3",
     "@types/react": "19.3.0",
     "playwright": "1.64.1",
     "react": "19.3.1",
@@ -59,10 +55,5 @@
     "vite": "8.3.5",
     "vitest": "5.0.5"
   },
-  "packageManager": "pnpm@10.33.0",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
-  }
+  "packageManager": "pnpm@10.33.0"
 }

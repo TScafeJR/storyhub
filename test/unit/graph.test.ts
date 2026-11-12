@@ -1,9 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { classifyDrift } from '../../src/core/diff.js';
-import { extractSpecs, importChain, reverseClosure } from '../../src/core/graph.js';
+import { extractSpecs, importChain, regexSpecs, reverseClosure } from '../../src/core/graph.js';
+import { loadParser } from '../../src/core/parser.js';
 import { parseWorktreeList } from '../../src/core/worktrees.js';
 
 describe('extractSpecs', () => {
+    beforeAll(async () => {
+        expect(await loadParser()).toBeTypeOf('function'); // resolved through Storybook's own oxc-parser
+    });
+
     it('collects runtime imports, re-exports and literal dynamic imports, skipping type-only imports', () => {
         const code = `import type { X } from './types';
 import { type Y, z } from './z';
@@ -29,6 +34,13 @@ const t: Array<number> = [];`;
 
     it('ignores non-script assets', () => {
         expect(extractSpecs('a.css', '@import "./b.css";')).toEqual([]);
+    });
+});
+
+describe('regexSpecs fallback', () => {
+    it('finds static, side-effect and dynamic imports without a parser', () => {
+        const code = `import a from './a';\nimport type { T } from './t';\nimport './side.css';\nexport * from './c';\nconst l = import('./lazy');`;
+        expect(regexSpecs(code).sort()).toEqual(['./a', './c', './lazy', './side.css']);
     });
 });
 

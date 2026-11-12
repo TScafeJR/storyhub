@@ -52,7 +52,7 @@ export function ensureDeps() {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'package.json'), JSON.stringify(depsManifest, null, 2));
     writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'onlyBuiltDependencies:\n  - esbuild\n');
-    execFileSync('pnpm', ['install', '--config.node-linker=hoisted', '--ignore-workspace'], { cwd: dir, stdio: 'inherit' });
+    execFileSync('pnpm', ['install', '--config.node-linker=hoisted', '--config.minimum-release-age=10080', '--ignore-workspace'], { cwd: dir, stdio: 'inherit' });
     writeFileSync(join(dir, 'node_modules/.storyhub-ready'), '');
     return dir;
 }

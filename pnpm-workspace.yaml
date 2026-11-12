@@ -1,0 +1,8 @@
+# Supply-chain guards for this repo's own installs.
+# Save exact versions, never ranges.
+savePrefix: ''
+# Refuse package versions published less than 7 days ago (minutes).
+minimumReleaseAge: 10080
+# Only these packages may run install scripts.
+onlyBuiltDependencies:
+  - esbuild

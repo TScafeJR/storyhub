@@ -1,7 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { parseSync } from 'oxc-parser';
 import { isBareSpec, isNodeModules, isRelativeSpec, realpath, relInside } from './paths.js';
+import { getParser, loadParser } from './parser.js';
 import type { FileChange, ResolveFn } from './types.js';
 
 /** rel → set of rels it imports (both git-root relative). */
@@ -27,6 +27,8 @@ export function extractSpecs(filename: string, code: string): string[] {
     } else if (!SCRIPT_RE.test(filename)) {
         return [];
     }
+    const parseSync = getParser();
+    if (!parseSync) return regexSpecs(source);
     const { module, errors } = parseSync(parseName, source);
     if (errors.length && !module.hasModuleSyntax && !module.dynamicImports.length) return [];
     const specs: string[] = [];
@@ -43,6 +45,17 @@ export function extractSpecs(filename: string, code: string): string[] {
         if (m) specs.push(m[2]);
     }
     return [...new Set(specs)];
+}
+
+/**
+ * Fallback scanner used only when no parser is available. It over-reports (comments and strings
+ * can match), which can only make more files dirty: slower sharing, never a wrong render.
+ */
+export function regexSpecs(code: string): string[] {
+    const specs = new Set<string>();
+    const re = /\b(?:import|export)\s+(?!type\s)[^'"`;]*?\bfrom\s*['"]([^'"]+)['"]|\bimport\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+    for (const m of code.matchAll(re)) specs.add(m[1] ?? m[2] ?? m[3]);
+    return [...specs];
 }
 
 interface ParsedFile {
@@ -64,6 +77,7 @@ export class SpecCache {
         }
         const hit = this.cache.get(abs);
         if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.specs;
+        await loadParser();
         let specs: string[] = [];
         try {
             specs = extractSpecs(abs, await readFile(abs, 'utf8'));

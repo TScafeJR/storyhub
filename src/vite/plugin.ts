@@ -102,6 +102,8 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
             resolve: viteResolver(server),
             refBase: opts.refBase,
             watch: { hub: false },
+            // reuse Vite's chokidar (it already ignores node_modules/.git) for worktree trees
+            addWatchRoots: roots => server!.watcher.add(roots),
             log: opts.log
         }).then(h => {
             hub = h;

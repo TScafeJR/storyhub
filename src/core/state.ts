@@ -1,7 +1,6 @@
 import { EventEmitter } from 'node:events';
-import { existsSync } from 'node:fs';
+import { existsSync, watch, type FSWatcher } from 'node:fs';
 import { join, relative } from 'node:path';
-import { watch, type FSWatcher } from 'chokidar';
 import { classifyDrift, mergeBase, workingChanges } from './diff.js';
 import { git } from './git.js';
 import { buildBranchGraph, buildHubGraph, importChain, ResolveCache, reverseClosure, SpecCache, type Edges, type GraphContext } from './graph.js';
@@ -21,6 +20,11 @@ export interface StoryHubOptions {
     refBase?: string;
     /** Watch worktrees and git metadata, refreshing automatically. */
     watch?: boolean | { hub?: boolean };
+    /**
+     * Adds directory trees to an existing watcher whose events reach `notify()` (e.g. Vite's, which
+     * already ignores node_modules and .git). Without one, storyhub falls back to fs.watch.
+     */
+    addWatchRoots?: (roots: string[]) => void;
     debounceMs?: number;
     log?: (msg: string) => void;
 }
@@ -177,7 +181,10 @@ export class StoryHub extends EventEmitter {
     /** Feed file events from an existing watcher (e.g. Vite's) instead of watching the hub twice. */
     notify(event: string, abs: string): void {
         if (IGNORED.test(abs)) return;
-        if (event === 'add' || event === 'unlink' || event === 'addDir' || event === 'unlinkDir') this.ctx.resolver.clear();
+        if (event === 'add' || event === 'unlink' || event === 'addDir' || event === 'unlinkDir') {
+            this.ctx.resolver.clear();
+            this.ctx.specs.invalidate(abs);
+        }
         this.schedule();
     }
 
@@ -187,43 +194,65 @@ export class StoryHub extends EventEmitter {
     }
 
     private watchedRoots = new Set<string>();
+    private commonDir = '';
 
     private async startWatching(): Promise<void> {
-        const commonDir = realpath(join(this.root, (await git(this.root, ['rev-parse', '--git-common-dir'])).trim()));
-        const gitWatcher = watch(commonDir, {
-            ignoreInitial: true,
-            depth: 4,
-            ignored: p => /[\\/](objects|logs|hooks|lfs|info)([\\/]|$)/.test(p) || /\.lock$/.test(p)
-        });
-        gitWatcher.on('all', (_e, p) => {
-            const rel = toPosix(relative(commonDir, p));
-            if (rel === 'HEAD' || rel.startsWith('refs/') || rel.startsWith('worktrees') || rel === 'packed-refs') {
-                this.ctx.resolver.clear();
-                this.schedule();
-            }
-        });
-        this.watchers.push(gitWatcher);
+        this.commonDir = realpath(join(this.root, (await git(this.root, ['rev-parse', '--git-common-dir'])).trim()));
+        // git metadata: HEAD/packed-refs at the top, plus refs/ and worktrees/ (both small trees)
+        this.watchGit(this.commonDir, false);
+        this.watchGit(join(this.commonDir, 'refs'), true);
+        this.watchGit(join(this.commonDir, 'worktrees'), true);
         const watchHub = typeof this.opts.watch === 'object' ? this.opts.watch.hub !== false : true;
-        if (watchHub) this.addTreeWatcher(this.root);
+        if (watchHub) this.addTree(this.root);
         this.syncWatchers();
     }
 
-    private addTreeWatcher(root: string): void {
+    private watchGit(dir: string, recursive: boolean): void {
+        if (this.watchedRoots.has(dir) || !existsSync(dir)) return;
+        try {
+            const w = watch(dir, { recursive }, (_event, file) => {
+                const name = file ? toPosix(String(file)) : '';
+                if (/(^|\/)(objects|logs|hooks|lfs|info)(\/|$)/.test(name) || name.endsWith('.lock')) return;
+                if (!recursive && name === 'worktrees') this.watchGit(join(this.commonDir, 'worktrees'), true);
+                this.ctx.resolver.clear();
+                this.schedule();
+            });
+            w.on('error', () => this.watchedRoots.delete(dir));
+            this.watchedRoots.add(dir);
+            this.watchers.push(w);
+        } catch {
+            // unwatchable (e.g. removed meanwhile); a later refresh retries
+        }
+    }
+
+    private addTree(root: string): void {
         if (this.watchedRoots.has(root)) return;
         this.watchedRoots.add(root);
-        const w = watch(root, { ignoreInitial: true, ignored: p => IGNORED.test(p) });
-        w.on('all', (e, p) => this.notify(e, p));
-        this.watchers.push(w);
+        if (this.opts.addWatchRoots) {
+            this.opts.addWatchRoots([root]);
+            return;
+        }
+        try {
+            const w = watch(root, { recursive: true }, (event, file) => {
+                if (!file) return;
+                this.notify(event === 'rename' ? 'add' : 'change', join(root, String(file)));
+            });
+            w.on('error', () => this.watchedRoots.delete(root));
+            this.watchers.push(w);
+        } catch {
+            this.watchedRoots.delete(root);
+        }
     }
 
     private syncWatchers(): void {
-        if (!this.watchers.length) return;
-        for (const wt of this.worktrees) if (!wt.isHub) this.addTreeWatcher(wt.path);
+        if (!this.commonDir) return;
+        this.watchGit(join(this.commonDir, 'worktrees'), true);
+        for (const wt of this.worktrees) if (!wt.isHub) this.addTree(wt.path);
     }
 
     async close(): Promise<void> {
         clearTimeout(this.timer);
-        await Promise.all(this.watchers.map(w => w.close()));
+        for (const w of this.watchers) w.close();
         this.watchers = [];
         this.watchedRoots.clear();
     }
