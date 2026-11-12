@@ -1,0 +1,195 @@
+import { readFileSync } from 'node:fs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { normalizeStories } from 'storybook/internal/common';
+import type { InlineConfig, ViteDevServer } from 'vite';
+import type { StoryHub } from './core/state.js';
+import type { BranchSummary } from './core/types.js';
+import { gitToplevel, listWorktrees } from './core/worktrees.js';
+import { createMcpHandler } from './mcp/server.js';
+import { buildBranchIndex, isStoryFileFor, type IndexContext, type StoryIndex } from './server/branchIndex.js';
+import { RELOAD_EVENT, storyhubVitePlugin } from './vite/plugin.js';
+
+export const REF_BASE = '/__storyhub';
+export const MCP_PATH = '/storyhub/mcp';
+export const BRANCHES_EVENT = 'storyhub/branches-changed';
+
+const version: string = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version;
+
+/* Minimal views of Storybook's preset API, so this file doesn't depend on internal types. */
+interface Presets {
+    apply<T = unknown>(name: string, initial?: unknown, options?: unknown): Promise<T>;
+}
+interface PresetOptions {
+    configDir: string;
+    configType?: 'DEVELOPMENT' | 'PRODUCTION';
+    presets: Presets;
+    port?: number;
+    https?: boolean;
+    [key: string]: unknown;
+}
+interface Channel {
+    emit(event: string, ...args: unknown[]): void;
+}
+type Next = (err?: unknown) => void;
+interface App {
+    use(handler: (req: IncomingMessage, res: ServerResponse, next: Next) => unknown): unknown;
+}
+
+interface Deferred<T> {
+    promise: Promise<T>;
+    resolve: (value: T) => void;
+}
+const deferred = <T>(): Deferred<T> => {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>(r => (resolve = r));
+    return { promise, resolve };
+};
+
+interface Session {
+    hub: Deferred<StoryHub>;
+    server?: ViteDevServer;
+    ctx?: Promise<IndexContext>;
+}
+const sessions = new Map<string, Session>();
+const session = (configDir: string): Session => {
+    let s = sessions.get(configDir);
+    if (!s) sessions.set(configDir, (s = { hub: deferred() }));
+    return s;
+};
+
+const isDev = (options: PresetOptions) => options.configType === 'DEVELOPMENT';
+
+function indexContext(options: PresetOptions): Promise<IndexContext> {
+    const s = session(options.configDir);
+    s.ctx ??= (async () => {
+        const gitRoot = await gitToplevel(options.configDir);
+        const stories = await options.presets.apply('stories', [], options);
+        const workingDir = process.cwd();
+        const specifiers = normalizeStories(stories as never, { configDir: options.configDir, workingDir }) as unknown as IndexContext['specifiers'];
+        return { gitRoot, workingDir, specifiers };
+    })();
+    return s.ctx;
+}
+
+const refTitle = (branch: string | null, fallback: string) => `⎇ ${branch ?? fallback}`;
+
+export const managerEntries = (entries: string[] = []) => [...entries, fileURLToPath(new URL('./manager.js', import.meta.url))];
+
+/** One composition ref per worktree, served by this same dev server. */
+export const refs = async (existing: Record<string, unknown> = {}, options: PresetOptions) => {
+    if (!isDev(options)) return existing;
+    let worktrees;
+    try {
+        worktrees = await listWorktrees(await gitToplevel(options.configDir));
+    } catch {
+        return existing;
+    }
+    const out: Record<string, unknown> = { ...existing };
+    for (const wt of worktrees) {
+        if (wt.isHub) continue;
+        out[wt.id] = { title: refTitle(wt.branch, basename(wt.path)), url: `${REF_BASE}/${wt.id}`, expanded: true };
+    }
+    return out;
+};
+
+export const viteFinal = async (config: InlineConfig, options: PresetOptions) => {
+    if (!isDev(options)) return config;
+    const ctx = await indexContext(options).catch(() => null);
+    if (!ctx) return config; // not a git checkout: stay out of the way
+    const s = session(options.configDir);
+    const plugin = storyhubVitePlugin({
+        gitRoot: ctx.gitRoot,
+        configDir: options.configDir,
+        isStoryFile: isStoryFileFor(ctx),
+        refBase: REF_BASE,
+        log: msg => console.log(msg),
+        onHub: (hub, server) => {
+            s.server = server;
+            s.hub.resolve(hub);
+        }
+    });
+    return { ...config, plugins: [...(config.plugins ?? []), plugin] };
+};
+
+async function hubIndex(options: PresetOptions): Promise<StoryIndex> {
+    const generator = await options.presets.apply<{ getIndex(): Promise<StoryIndex> }>('storyIndexGenerator');
+    return generator.getIndex();
+}
+
+async function branchIndex(options: PresetOptions, id: string): Promise<StoryIndex | null> {
+    const hub = await session(options.configDir).hub.promise;
+    const branch = hub.branches.get(id);
+    if (!branch) return null;
+    return buildBranchIndex(await indexContext(options), branch, await hubIndex(options));
+}
+
+const originOf = (options: PresetOptions, req: IncomingMessage) => `${options.https ? 'https' : 'http'}://${req.headers.host ?? `localhost:${options.port ?? 6006}`}`;
+
+/** Injected into each branch iframe: reload when the branch's structure (dirty/affected sets) changes. */
+const reloadSnippet = (id: string) => `<script type="module">
+import { createHotContext } from '/@vite/client';
+const hot = createHotContext('/__storyhub/${id}/iframe.html');
+hot.on(${JSON.stringify(RELOAD_EVENT)}, ({ ids }) => { if (ids.includes(${JSON.stringify(id)})) location.reload(); });
+</script>`;
+
+const sendJson = (res: ServerResponse, status: number, body: unknown) => {
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(body));
+};
+
+export const experimental_devServer = async (app: App, options: PresetOptions) => {
+    if (!isDev(options)) return app;
+    const s = session(options.configDir);
+    const mcp = createMcpHandler({
+        getHub: () => s.hub.promise,
+        getHubIndex: () => hubIndex(options),
+        getBranchIndex: id => branchIndex(options, id),
+        origin: req => originOf(options, req),
+        version
+    });
+
+    app.use(async (req, res, next) => {
+        try {
+            const url = new URL(req.url ?? '/', 'http://storyhub.local');
+            if (url.pathname === MCP_PATH) return await mcp(req, res);
+            if (!url.pathname.startsWith(`${REF_BASE}/`)) return next();
+            const rest = url.pathname.slice(REF_BASE.length + 1);
+            if (rest === 'branches.json') {
+                const hub = await s.hub.promise;
+                return sendJson(res, 200, { branches: hub.summaries() satisfies BranchSummary[] });
+            }
+            const slash = rest.indexOf('/');
+            const id = slash === -1 ? rest : rest.slice(0, slash);
+            const file = slash === -1 ? '' : rest.slice(slash + 1);
+            if (file === 'index.json' || file === 'stories.json') {
+                const index = await branchIndex(options, id);
+                return index ? sendJson(res, 200, index) : sendJson(res, 404, { error: `unknown branch ${id}` });
+            }
+            if (file === 'metadata.json') return sendJson(res, 200, {});
+            if (file === 'iframe.html') {
+                // same preview bundle as the hub; only the URL (and so ./index.json) differs
+                const upstream = await fetch(`${originOf(options, req)}/iframe.html${url.search}`);
+                const html = (await upstream.text()).replace('</head>', `${reloadSnippet(id)}</head>`);
+                res.writeHead(upstream.status, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' });
+                return res.end(html);
+            }
+            // anything else the preview asks for relatively (fonts, assets) lives at the root
+            res.writeHead(302, { Location: `/${file}${url.search}` });
+            res.end();
+        } catch (err) {
+            if (!res.headersSent) sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+            else res.end();
+        }
+    });
+    return app;
+};
+
+export const experimental_serverChannel = async (channel: Channel, options: PresetOptions) => {
+    if (!isDev(options)) return channel;
+    void session(options.configDir).hub.promise.then(hub => {
+        hub.on('change', (summaries: BranchSummary[]) => channel.emit(BRANCHES_EVENT, summaries));
+    });
+    return channel;
+};

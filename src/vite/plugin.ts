@@ -1,0 +1,178 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { searchForWorkspaceRoot, type Plugin, type ViteDevServer } from 'vite';
+import { cleanId, isNodeModules, isRelativeSpec, realpath, relInside } from '../core/paths.js';
+import { StoryHub } from '../core/state.js';
+import { listWorktrees } from '../core/worktrees.js';
+import { viteResolver } from './resolver.js';
+
+export const IMPORT_PREFIX = 'storyhub:';
+export const RELOAD_EVENT = 'storyhub:reload';
+const STORIES_MODULE = 'storybook-stories.js';
+
+export interface StoryhubVitePluginOptions {
+    gitRoot: string;
+    configDir: string;
+    isStoryFile: (rel: string) => boolean;
+    refBase?: string;
+    /** Called once the hub is ready (the dev server and its resolver exist). */
+    onHub?: (hub: StoryHub, server: ViteDevServer) => void;
+    log?: (msg: string) => void;
+}
+
+/** Code appended to builder-vite's virtual stories module so the preview can import branch stories. */
+export function branchImportersCode(hub: StoryHub | undefined): string {
+    const entries: string[] = [];
+    for (const b of hub?.branches.values() ?? []) {
+        for (const rel of b.affectedStories) {
+            const abs = join(b.worktree.path, rel);
+            entries.push(`  ${JSON.stringify(IMPORT_PREFIX + abs)}: () => import(${JSON.stringify(abs)})`);
+        }
+    }
+    return `
+// --- storyhub: branch story importers ---
+const __storyhubImporters = {
+${entries.join(',\n')}
+};
+const __storyhubOriginalImportFn = importFn;
+importFn = async function storyhubImportFn(path) {
+  if (typeof path === 'string' && path.startsWith(${JSON.stringify(IMPORT_PREFIX)})) {
+    const load = __storyhubImporters[path];
+    return load ? await load() : await import(/* @vite-ignore */ '/@fs' + path.slice(${IMPORT_PREFIX.length}));
+  }
+  return await __storyhubOriginalImportFn(path);
+};
+`;
+}
+
+/**
+ * Serves each worktree's changed files on top of the hub's modules.
+ *
+ * Imports made from a worktree module resolve as if made from the hub's twin of that file, so
+ * aliases and bare packages behave identically and dependencies come from the hub's node_modules.
+ * The resolved file then lands in the worktree only when it is dirty for that branch (changed, or
+ * importing something changed); otherwise the hub's module instance is shared.
+ */
+export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
+    let hub: StoryHub | undefined;
+    let hubPromise: Promise<StoryHub> | undefined;
+    let server: ViteDevServer | undefined;
+    let allow: string[] | undefined;
+    const structure = new Map<string, string>();
+
+    const allowRoots = (roots: string[]) => {
+        if (!allow) return;
+        for (const r of roots) if (!allow.includes(r)) allow.push(r);
+    };
+
+    const onChange = () => {
+        if (!hub || !server) return;
+        allowRoots(hub.worktrees.map(w => w.path));
+        // builder-vite regenerates (and HMR-patches) the virtual stories module on this event
+        for (const id of server.moduleGraph.idToModuleMap.keys()) {
+            if (id.endsWith(STORIES_MODULE)) server.watcher.emit('change', id);
+        }
+        const reload: string[] = [];
+        const seen = new Set<string>();
+        for (const b of hub.branches.values()) {
+            seen.add(b.worktree.id);
+            const fp = JSON.stringify([[...b.dirty].sort(), b.affectedStories]);
+            const prev = structure.get(b.worktree.id);
+            structure.set(b.worktree.id, fp);
+            if (prev !== undefined && prev !== fp) {
+                reload.push(b.worktree.id);
+                // resolution decisions baked into transformed worktree modules are now stale
+                for (const [file, mods] of server.moduleGraph.fileToModulesMap) {
+                    if (relInside(b.worktree.path, file) !== null) for (const m of mods) server.moduleGraph.invalidateModule(m);
+                }
+            }
+        }
+        for (const id of structure.keys()) if (!seen.has(id)) structure.delete(id);
+        if (reload.length) server.ws.send({ type: 'custom', event: RELOAD_EVENT, data: { ids: reload } });
+    };
+
+    const start = (): Promise<StoryHub> => {
+        if (!server) return Promise.reject(new Error('storyhub: dev server not ready'));
+        hubPromise ??= StoryHub.create({
+            cwd: opts.gitRoot,
+            configDir: opts.configDir,
+            isStoryFile: opts.isStoryFile,
+            resolve: viteResolver(server),
+            refBase: opts.refBase,
+            watch: { hub: false },
+            log: opts.log
+        }).then(h => {
+            hub = h;
+            for (const b of h.branches.values()) structure.set(b.worktree.id, JSON.stringify([[...b.dirty].sort(), b.affectedStories]));
+            allowRoots(h.worktrees.map(w => w.path));
+            server!.watcher.on('all', (event, file) => h.notify(event, file));
+            h.on('change', onChange);
+            server!.httpServer?.once('close', () => void h.close());
+            opts.onHub?.(h, server!);
+            onChange();
+            return h;
+        });
+        return hubPromise;
+    };
+
+    return {
+        name: 'storyhub',
+        enforce: 'pre',
+        apply: 'serve',
+
+        async config(config) {
+            const root = config.root ?? process.cwd();
+            const worktrees = await listWorktrees(opts.gitRoot).catch(() => []);
+            const existing = config.server?.fs?.allow;
+            const base = existing && existing.length ? [] : [searchForWorkspaceRoot(root)];
+            return { server: { fs: { allow: [...base, opts.gitRoot, ...worktrees.map(w => w.path)] } } };
+        },
+
+        configResolved(config) {
+            allow = config.server.fs.allow as string[];
+        },
+
+        configureServer(s) {
+            server = s;
+            // resolution needs a started plugin container; kick off after createServer settles
+            setTimeout(() => void start().catch(err => opts.log?.(`storyhub: failed to start: ${err?.stack ?? err}`)), 0);
+            const close = s.close.bind(s);
+            s.close = async () => {
+                await hub?.close();
+                return close();
+            };
+        },
+
+        async resolveId(source, importer, options) {
+            if ((options?.custom as { storyhub?: { raw?: boolean } } | undefined)?.storyhub?.raw) return null;
+            if (!hub || !importer || source.startsWith('\0') || importer.startsWith('\0')) return null;
+            const imp = cleanId(importer);
+            const branch = hub.branchForPath(imp);
+            if (!branch) return null;
+            const wt = branch.worktree.path;
+            const twin = join(hub.root, relInside(wt, imp)!);
+            const resolveOpts = { ...options, skipSelf: true };
+            let r = await this.resolve(source, twin, resolveOpts);
+            if (!r && isRelativeSpec(source)) r = await this.resolve(source, imp, resolveOpts);
+            if (!r || r.external) return r;
+            const q = r.id.search(/[?#]/);
+            const path = q === -1 ? r.id : r.id.slice(0, q);
+            const query = q === -1 ? '' : r.id.slice(q);
+            if (path.startsWith('\0') || !existsSync(path)) return r;
+            const real = realpath(path);
+            if (isNodeModules(real)) return r;
+            const rel = relInside(hub.root, real) ?? relInside(wt, real);
+            if (rel === null) return r;
+            const inBranch = join(wt, rel);
+            const inHub = join(hub.root, rel);
+            if (branch.dirty.has(rel) && existsSync(inBranch)) return { ...r, id: inBranch + query };
+            if (existsSync(inHub)) return { ...r, id: inHub + query };
+            return { ...r, id: inBranch + query };
+        },
+
+        transform(code, id) {
+            if (!id.endsWith(STORIES_MODULE) || !code.includes('importFn')) return null;
+            return { code: code + branchImportersCode(hub), map: null };
+        }
+    };
+}
