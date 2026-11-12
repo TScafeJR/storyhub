@@ -26,6 +26,8 @@ export function branchImportersCode(hub: StoryHub | undefined): string {
     for (const b of hub?.branches.values() ?? []) {
         for (const rel of b.affectedStories) {
             const abs = join(b.worktree.path, rel);
+            // a missing path would fail import analysis for the whole module, hub stories included
+            if (!existsSync(abs)) continue;
             entries.push(`  ${JSON.stringify(IMPORT_PREFIX + abs)}: () => import(${JSON.stringify(abs)})`);
         }
     }

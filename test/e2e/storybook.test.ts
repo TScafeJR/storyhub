@@ -98,6 +98,8 @@ describe('storyhub in a real Storybook', () => {
         const page = await browser.newPage();
         const card = '/iframe.html?id=components-card--default&viewMode=story';
         expect(await renderedRoot(page, card, '[data-testid=card]')).toContain('Go v1');
+        // a story main added after the branches split keeps working in the hub
+        expect(await renderedRoot(page, '/iframe.html?id=components-late--default&viewMode=story', '[data-testid=late]')).toContain('Late v1');
         const btn = await renderedRoot(page, `/__storyhub/feat-button${card}`, '[data-testid=card]');
         expect(btn).toContain('Go v2');
         expect(btn).toContain('label:card');

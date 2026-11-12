@@ -39,6 +39,7 @@ describe('StoryHub on the fixture repo', () => {
             'src/components/Badge.stories.tsx',
             'src/components/Button.stories.tsx',
             'src/components/Card.stories.tsx',
+            'src/components/Late.stories.tsx',
             'src/components/Panel.stories.tsx'
         ]);
     });
@@ -49,6 +50,8 @@ describe('StoryHub on the fixture repo', () => {
         expect(b.affectedStories).toEqual(['src/components/Button.stories.tsx', 'src/components/Card.stories.tsx']);
         expect(b.drift).toEqual([]);
         expect(b.dirty.has('src/theme.ts')).toBe(false);
+        // added on main after the branch split: dirty (it imports Button) but not in the worktree
+        expect(b.dirty.has('src/components/Late.stories.tsx')).toBe(true);
         expect(hub.reason('feat-button', 'src/components/Card.stories.tsx')).toEqual([
             'src/components/Card.stories.tsx',
             'src/components/Card.tsx',

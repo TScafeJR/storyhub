@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import { classifyDrift, mergeBase, workingChanges } from './diff.js';
@@ -134,7 +135,9 @@ export class StoryHub extends EventEmitter {
 
             const graph = await buildBranchGraph(this.ctx, hubEdges, wt.path, changes, [...entries]);
             const dirty = reverseClosure(graph.edges, changes.map(c => c.rel));
-            const affectedStories = [...entries].filter(s => dirty.has(s)).sort();
+            // A story main added after this branch split is unchanged here but absent from the
+            // worktree; it cannot render in the branch's module namespace, so it is not offered.
+            const affectedStories = [...entries].filter(s => dirty.has(s) && existsSync(join(wt.path, s))).sort();
             const drift = classifyDrift(changes, this.configDirRel, diverged);
             if (graph.missingDeps.length) drift.push('missing-dep');
             return { worktree: wt, mergeBase: base, changes, drift, diverged, dirty, affectedStories, missingDeps: graph.missingDeps, edges: graph.edges };

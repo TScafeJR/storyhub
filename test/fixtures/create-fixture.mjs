@@ -160,6 +160,17 @@ export const Box = ({ children }: { children: React.ReactNode }) => <section dat
 `
 };
 
+const lateHubFiles = {
+    'src/components/Late.tsx': `import React from 'react';
+import { Button } from './Button';
+export const Late = () => <div data-testid="late"><Button label="Late" /></div>;
+`,
+    'src/components/Late.stories.tsx': `import { Late } from './Late';
+export default { title: 'Components/Late', component: Late };
+export const Default = {};
+`
+};
+
 /** Scenario worktrees: name → { files to write, files to delete, commit? } */
 export const scenarios = {
     'feat-button': {
@@ -226,6 +237,11 @@ export function createFixture({ dir, scenarios: only = Object.keys(scenarios), i
         }
         worktrees[name] = wt;
     }
+    // main moves on after the branches split: a new story that imports Button exists only in the
+    // hub, so branches that change Button must not offer it (it is absent from their worktrees)
+    write(hub, lateHubFiles);
+    git(hub, 'add', '-A');
+    git(hub, 'commit', '-q', '-m', 'late hub story');
     return { dir, hub, worktrees };
 }
 
