@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0 (2026-11-12)
+
+- Make storyhub the one MCP server agents need for Storybook
+
 ## 0.4.0 (2026-11-12)
 
 - Detect which checkout Storybook actually runs from
