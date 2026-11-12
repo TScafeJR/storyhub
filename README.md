@@ -157,3 +157,16 @@ pnpm fixture     # generate the fixture repo to poke at by hand
 ```
 
 The repo's own installs refuse package versions newer than 7 days and save exact versions (`pnpm-workspace.yaml`).
+
+## Releasing
+
+Publishing always rebuilds `dist` (`prepack`) and runs the typecheck and unit tests first (`prepublishOnly`), so a broken or stale build cannot go out.
+
+```sh
+pnpm release:check          # optional but recommended: everything, including the browser E2E suite
+npm version patch           # or minor / major: bumps package.json, commits and tags vX.Y.Z
+pnpm publish                # refuses unless the tree is clean and you are on main
+git push --follow-tags
+```
+
+The first time, log in with `npm login`. If your npm account uses two-factor auth, pnpm prompts for the code (or pass `--otp <code>`).

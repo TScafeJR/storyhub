@@ -2,15 +2,26 @@
   "name": "storyhub",
   "version": "0.1.0",
   "description": "Render every git worktree's UI changes as branch sections in a single Storybook, with MCP support",
-  "type": "module",
-  "license": "MIT",
   "keywords": [
     "storybook",
     "storybook-addon",
     "git",
     "worktree",
+    "worktrees",
+    "branches",
     "mcp"
   ],
+  "homepage": "https://github.com/TScafeJR/storyhub#readme",
+  "bugs": {
+    "url": "https://github.com/TScafeJR/storyhub/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TScafeJR/storyhub.git"
+  },
+  "license": "MIT",
+  "author": "Tyrone Scafe",
+  "type": "module",
   "engines": {
     "node": ">=20.19.0"
   },
@@ -29,14 +40,18 @@
   "files": [
     "dist",
     "preset.js",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "rm -rf dist && tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit",
-    "test:e2e": "npm run build && vitest run --project e2e",
-    "fixture": "node test/fixtures/create-fixture.mjs"
+    "test:e2e": "pnpm build && vitest run --project e2e",
+    "fixture": "node test/fixtures/create-fixture.mjs",
+    "prepack": "pnpm build",
+    "prepublishOnly": "pnpm typecheck && pnpm test",
+    "release:check": "pnpm typecheck && pnpm test && pnpm test:e2e && pnpm pack --dry-run"
   },
   "peerDependencies": {
     "storybook": "^10.5.0",
@@ -54,6 +69,22 @@
     "typescript": "5.9.3",
     "vite": "8.3.5",
     "vitest": "5.0.5"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "storybook": {
+    "displayName": "storyhub",
+    "supportedFrameworks": [
+      "react",
+      "react-native-web",
+      "vue",
+      "svelte",
+      "preact",
+      "html",
+      "web-components"
+    ]
   },
   "packageManager": "pnpm@10.33.0"
 }
