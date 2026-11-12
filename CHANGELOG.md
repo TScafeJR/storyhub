@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 (2026-11-12)
+
+- Detect which checkout Storybook actually runs from
+- Fix a race that could crash the sidebar when a branch is added live
+- Watch git metadata when Storybook runs from a linked worktree
+
 ## 0.3.0 (2026-11-12)
 
 - Restore oxlint and fix what it found in the webpack work
