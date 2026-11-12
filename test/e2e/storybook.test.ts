@@ -72,25 +72,30 @@ afterAll(async () => {
 });
 
 describe('storyhub in a real Storybook', () => {
-    it('shows hub stories first, then one section per worktree listing only affected stories', async () => {
+    it('shows branch sections first, each with only its affected stories, then the common stories', async () => {
         const page = await browser.newPage();
         await page.goto(`${base}/`);
-        const lines = await until(async () => {
-            const l = await sidebar(page);
-            return l.includes('⎇ feat-ui · deps changed') && l;
-        }, 'branch sections in the sidebar');
-        const sections = lines.filter(l => l.startsWith('⎇'));
-        expect(sections).toEqual(['⎇ feat-button', '⎇ feat-label', '⎇ feat-new', '⎇ feat-ui · deps changed']);
-        const after = (title: string) => {
-            const start = lines.indexOf(title);
-            const next = lines.findIndex((l, i) => i > start && l.startsWith('⎇'));
-            return lines.slice(start + 1, next === -1 ? undefined : next).filter(l => l !== 'COMPONENTS');
-        };
-        expect(lines.indexOf('Badge')).toBeLessThan(lines.indexOf('⎇ feat-button'));
-        expect(after('⎇ feat-button')).toEqual(['Button', 'Card']);
-        expect(after('⎇ feat-label')).toEqual(['Card']);
-        expect(after('⎇ feat-new')).toEqual(['Chip']);
-        expect(after('⎇ feat-ui · deps changed')).toEqual(['Panel']);
+        await until(async () => (await sidebar(page)).includes('⎇ feat-ui · deps changed'), 'branch sections in the sidebar');
+        // DOM order is Storybook's (local first); storyhub reorders visually, so read on-screen positions
+        const blocks = await page.$$eval('#storybook-explorer-tree > div', els =>
+            els
+                .map(e => ({
+                    title: e.getAttribute('data-title') ?? (e.getAttribute('aria-label') ? null : 'Common'),
+                    top: e.getBoundingClientRect().top,
+                    text: (e as HTMLElement).innerText.split('\n').map(s => s.trim()).filter(s => s && !['COMPONENTS', 'Common', 'Skip to content'].includes(s))
+                }))
+                .filter(b => b.title)
+                .sort((a, b) => a.top - b.top)
+                .map(({ title, text }) => [title, text])
+        );
+        expect(blocks).toEqual([
+            ['⎇ feat-button', ['Button', 'Card']],
+            ['⎇ feat-label', ['Card']],
+            ['⎇ feat-new', ['Chip']],
+            ['⎇ feat-ui · deps changed', ['Panel']],
+            ['Common', ['Badge', 'Default', 'Button', 'Card', 'Late', 'Panel']]
+        ]);
+        expect(await page.evaluate(() => getComputedStyle(document.querySelector('#storybook-explorer-tree > div:not([data-title]):not([aria-label])')!, '::before').content)).toBe('"Common"');
         await page.close();
     });
 

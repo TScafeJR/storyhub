@@ -77,6 +77,30 @@ const refTitle = (branch: string | null, fallback: string) => `⎇ ${branch ?? f
 
 // The manager entry is picked up by Storybook's addon convention (the package's `./manager` export).
 
+/**
+ * Sidebar order. Storybook always renders local stories before composed refs, so branch sections
+ * are moved with flexbox `order`: each branch ref renders as a header div (aria-label contains the
+ * ⎇ title) plus a content div (data-title is the ⎇ title); the hub's own section is the one div
+ * with neither attribute. Only visual order changes; DOM and keyboard order stay Storybook's.
+ */
+export function sidebarCss(position: 'top' | 'bottom', commonLabel: string): string {
+    const hub = '#storybook-explorer-tree > div:not([data-title]):not([aria-label])';
+    const branch = '#storybook-explorer-tree > div:is([data-title^="⎇"], [aria-label*="⎇"])';
+    const label = JSON.stringify(commonLabel);
+    return `
+#storybook-explorer-tree { display: flex; flex-direction: column; }
+${position === 'top' ? branch : hub} { order: -1; }
+${position === 'top' ? `${hub}::before { content: ${label}; display: block; font-weight: 700; font-size: 13px; line-height: 16px; margin-top: 16px; padding: 20px 0 8px 20px; border-top: 1px solid rgba(128, 128, 128, 0.2); }` : ''}
+`;
+}
+
+export const managerHead = async (head: string | undefined, options: PresetOptions) => {
+    if (!isDev(options)) return head ?? '';
+    const position = options.branchesPosition === 'bottom' ? 'bottom' : 'top';
+    const label = typeof options.commonLabel === 'string' ? options.commonLabel : 'Common';
+    return `${head ?? ''}\n<style data-storyhub>${sidebarCss(position, label)}</style>`;
+};
+
 /** One composition ref per worktree, served by this same dev server. */
 export const refs = async (existing: Record<string, unknown> = {}, options: PresetOptions) => {
     if (!isDev(options)) return existing;
