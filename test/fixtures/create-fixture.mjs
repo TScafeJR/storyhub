@@ -50,13 +50,13 @@ const depsManifest = manifestFor('vite');
 
 /** Installs fixture dependencies once (hoisted node_modules, like npm/yarn) and returns the dir. */
 export function ensureDeps(builder = 'vite') {
-    const depsManifest = manifestFor(builder);
-    const hash = createHash('sha1').update(JSON.stringify(depsManifest)).digest('hex').slice(0, 10);
+    const manifest = manifestFor(builder);
+    const hash = createHash('sha1').update(JSON.stringify(manifest)).digest('hex').slice(0, 10);
     const dir = join(cacheRoot, `deps-${hash}`);
     if (existsSync(join(dir, 'node_modules/.storyhub-ready'))) return dir;
     rmSync(dir, { recursive: true, force: true });
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'package.json'), JSON.stringify(depsManifest, null, 2));
+    writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest, null, 2));
     writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'onlyBuiltDependencies:\n  - esbuild\n  - \'@swc/core\'\n');
     execFileSync('pnpm', ['install', '--config.node-linker=hoisted', '--config.minimum-release-age=10080', '--ignore-workspace'], { cwd: dir, stdio: 'inherit' });
     writeFileSync(join(dir, 'node_modules/.storyhub-ready'), '');

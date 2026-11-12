@@ -10,22 +10,25 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runGit } from '../fixtures/create-fixture.mjs';
 import { makeFixture, type Fixture } from '../helpers.js';
 
+const freePort = () =>
+    new Promise<number>((resolve, reject) => {
+        const srv = createServer();
+        srv.listen(0, '127.0.0.1', () => {
+            const { port } = srv.address() as { port: number };
+            srv.close(() => resolve(port));
+        });
+        srv.on('error', reject);
+    });
+
+const toolJson = (r: unknown) => JSON.parse((r as { content: Array<{ text: string }> }).content[0].text);
+const sidebar = async (page: Page) => (await page.locator('#storybook-explorer-tree').innerText()).split('\n').map(s => s.trim()).filter(Boolean);
+
 function suite(builder: 'vite' | 'webpack') {
     let fx: Fixture;
     let sb: ChildProcess;
     let base: string;
     let browser: Browser;
     let log = '';
-
-    const freePort = () =>
-        new Promise<number>((resolve, reject) => {
-            const srv = createServer();
-            srv.listen(0, '127.0.0.1', () => {
-                const { port } = srv.address() as { port: number };
-                srv.close(() => resolve(port));
-            });
-            srv.on('error', reject);
-        });
 
     const until = async <T>(fn: () => Promise<T | undefined | false>, what: string, timeout = 30_000): Promise<T> => {
         const end = Date.now() + timeout;
@@ -45,9 +48,7 @@ function suite(builder: 'vite' | 'webpack') {
     const branches = async () => (await (await fetch(`${base}/__storyhub/branches.json`)).json()).branches as Array<{ id: string; affectedStories: number; drift: string[] }>;
     const branchIndex = async (id: string) => (await (await fetch(`${base}/__storyhub/${id}/index.json`)).json()).entries as Record<string, { importPath: string }>;
 
-    const toolJson = (r: unknown) => JSON.parse((r as { content: Array<{ text: string }> }).content[0].text);
 
-    const sidebar = async (page: Page) => (await page.locator('#storybook-explorer-tree').innerText()).split('\n').map(s => s.trim()).filter(Boolean);
 
     const renderedRoot = async (page: Page, path: string, selector: string) => {
         await page.goto(base + path);

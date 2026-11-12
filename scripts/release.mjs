@@ -203,7 +203,8 @@ if (type !== 'current') {
         run(process.env.VISUAL || process.env.EDITOR || 'vi', [changelogPath]);
         rl.resume();
     } else if (!DRY) writeFileSync(changelogPath, changelog);
-    if (!DRY) writeFileSync(pkgPath, `${JSON.stringify({ ...pkg, version: next }, null, 2)}\n`);
+    // re-read rather than reuse the startup copy, so nothing written meanwhile is lost
+    if (!DRY) writeFileSync(pkgPath, `${JSON.stringify({ ...JSON.parse(readFileSync(pkgPath, 'utf8')), version: next }, null, 2)}\n`);
     else console.log(dim(`  [dry-run] write package.json version ${next} and CHANGELOG.md`));
     run('git', ['add', 'package.json', 'CHANGELOG.md'], { mutates: true });
     run('git', ['commit', '--quiet', '-m', `Release ${tag}`], { mutates: true });

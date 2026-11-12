@@ -45,9 +45,12 @@ const __storyhubRequire = (path, load) => {
     return prelude + source.replace(match[0], `const previewAnnotations = [${wrapped}];`);
 }
 
-export default function storyhubLoader(this: LoaderContext, source: string): string {
+// webpack calls loaders with the loader context as `this`
+function storyhubLoader(this: LoaderContext, source: string): string {
     this.cacheable(false);
     const { key, kind } = this.getOptions();
     if (kind === 'stories') return source + branchImportersCode(sessions().get(key)?.hub);
     return kind === 'entry' ? entryCode(source, key) : source;
 }
+
+export default storyhubLoader;
