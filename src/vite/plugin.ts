@@ -139,10 +139,10 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
         const seen = new Set<string>();
         for (const b of hub.branches.values()) {
             seen.add(b.worktree.id);
-            const fp = JSON.stringify([[...b.dirty].sort(), b.affectedStories]);
+            const shape = JSON.stringify([[...b.dirty].sort(), b.affectedStories]);
             const prev = structure.get(b.worktree.id);
-            structure.set(b.worktree.id, fp);
-            if (prev !== undefined && prev !== fp) {
+            structure.set(b.worktree.id, shape);
+            if (prev !== undefined && prev !== shape) {
                 reload.push(b.worktree.id);
                 // resolution decisions baked into transformed worktree modules are now stale
                 for (const [file, mods] of server.moduleGraph.fileToModulesMap) {

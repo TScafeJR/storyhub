@@ -133,8 +133,8 @@ async function clean() {
     const removable = report.candidates.filter(c => c.removable);
     console.log(`Base: ${report.base}`);
     for (const c of report.candidates.filter(x => x.reasons.length)) {
-        const status = c.removable ? (yes ? (result!.removed.includes(c.path) ? 'removed' : 'kept   ') : 'remove ') : 'keep   ';
-        console.log(`  ${status}  ${c.branch ?? '(detached)'}  ${c.path}\n           ${[...c.reasons, ...c.blockers.map(b => `blocked: ${b}`)].join('; ')}`);
+        const verdict = c.removable ? (yes ? (result!.removed.includes(c.path) ? 'removed' : 'kept   ') : 'remove ') : 'keep   ';
+        console.log(`  ${verdict}  ${c.branch ?? '(detached)'}  ${c.path}\n           ${[...c.reasons, ...c.blockers.map(b => `blocked: ${b}`)].join('; ')}`);
     }
     if (report.prunable.length) console.log(`  ${yes ? 'pruned ' : 'prune  '}  ${report.prunable.length} worktree record(s) whose directory is gone`);
     for (const k of result?.kept ?? []) console.log(`  note: ${k.path}: ${k.error}`);

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { existsSync, watch, type FSWatcher } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { classifyDrift, mergeBase, workingChanges } from './diff.js';
 import { git } from './git.js';
 import { buildBranchGraph, buildHubGraph, importChain, ResolveCache, reverseClosure, SpecCache, type Edges, type GraphContext } from './graph.js';

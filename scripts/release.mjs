@@ -78,7 +78,8 @@ if (git('status', '--porcelain')) {
 } else console.log('  working tree clean');
 
 // 3. Checks before the version moves, so a failure never leaves a tag behind.
-step(FULL ? 'Checks (typecheck, unit, browser E2E)' : 'Checks (typecheck, unit; add --full for browser E2E)');
+step(FULL ? 'Checks (lint, typecheck, unit, browser E2E)' : 'Checks (lint, typecheck, unit; add --full for browser E2E)');
+run('pnpm', ['lint']);
 run('pnpm', ['typecheck']);
 run('pnpm', ['test']);
 if (FULL) run('pnpm', ['test:e2e']);
@@ -98,7 +99,13 @@ while (!['patch', 'minor', 'major', ...(published ? [] : ['current'])].includes(
 }
 const next = type === 'current' ? pkg.version : choices[type];
 const tag = `v${next}`;
-if (run('git', ['rev-parse', '--verify', '--quiet', `refs/tags/${tag}`], { quiet: true, allowFail: true }).ok) fail(`Tag ${tag} already exists.`);
+const tagCommit = run('git', ['rev-parse', '--verify', '--quiet', `${tag}^{commit}`], { quiet: true, allowFail: true }).out;
+if (tagCommit) {
+    if (type === 'current') {
+        fail(`${tag} is already tagged (${tagCommit.slice(0, 7)}) but ${pkg.name}@${next} is not on npm, so an earlier publish did not finish. Release a patch instead (simplest), or publish that exact tag: git worktree add ../release-${next} ${tag}, install there, then pnpm publish --no-git-checks.`);
+    }
+    fail(`Tag ${tag} already exists.`);
+}
 
 // 5. Changelog draft from commits since the last release tag.
 const changelogPath = join(root, 'CHANGELOG.md');
@@ -109,7 +116,7 @@ if (type !== 'current') {
         .split('\n')
         .filter(s => s && !/^Release v\d/.test(s));
     const entry = `## ${next} (${new Date().toISOString().slice(0, 10)})\n\n${subjects.map(s => `- ${s}`).join('\n') || '- Maintenance release.'}\n\n`;
-    changelog = changelog.replace(/^# Changelog\s*\n/, m => `${m}\n${entry}`);
+    changelog = changelog.replace(/^# Changelog\s*/, `# Changelog\n\n${entry}`);
     step(`Changelog entry for ${next}`);
     console.log(entry.trimEnd().replace(/^/gm, '  '));
 }
@@ -124,6 +131,13 @@ const plan = [
 ];
 plan.forEach((p, i) => console.log(`  ${i + 1}. ${p}`));
 if (!(await confirm('Go?'))) fail('Cancelled. Nothing was changed.');
+
+// the tree must still be clean: anything that changed during checks would otherwise make
+// pnpm publish refuse after the tag is already pushed
+if (!DRY && git('status', '--porcelain')) {
+    console.log(git('status', '--short'));
+    fail('The working tree changed while the release was running. Nothing was committed, tagged or pushed.');
+}
 
 if (type !== 'current') {
     if (!DRY && (await confirm('Edit the changelog entry in your editor first?'))) {

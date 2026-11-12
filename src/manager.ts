@@ -37,12 +37,12 @@ export function titleFor(b: BranchSummary): string {
     return `⎇ ${name}${notes.length ? ` · ${notes.join(', ')}` : ''}`;
 }
 
-addons.register('storyhub', api => {
-    const globalRefs = (): Record<string, RefLike> => {
-        const g = globalThis as unknown as { REFS?: Record<string, RefLike> };
-        return (g.REFS ??= {});
-    };
+const globalRefs = (): Record<string, RefLike> => {
+    const g = globalThis as unknown as { REFS?: Record<string, RefLike> };
+    return (g.REFS ??= {});
+};
 
+addons.register('storyhub', api => {
     // Storybook copies the startup REFS into its store asynchronously. Adding or removing a ref
     // before that finishes makes its ref ordering produce undefined entries (the sidebar crashes),
     // so every sync first waits until the store holds every key REFS has.

@@ -199,6 +199,7 @@ Edits in a worktree hot-reload in its section. Adding stories, changing imports,
 
 ```sh
 pnpm install
+pnpm lint           # oxlint, warnings fail the run (pnpm lint:fix applies safe fixes)
 pnpm test           # unit tests against a generated fixture repo with real worktrees
 pnpm test:e2e       # builds, runs a real Storybook dev server, drives it with Playwright and the MCP SDK client
 pnpm fixture        # generate the fixture repo to explore by hand
@@ -214,7 +215,7 @@ npm run release -- --full    # also run the browser E2E suite first
 npm run release -- --dry-run # walk through every step without changing anything
 ```
 
-It checks you are on an up-to-date `main` and logged in to npm, offers `git commit -p` for any pending changes, runs the typecheck and unit tests, asks for patch, minor or major, drafts the `CHANGELOG.md` entry from commit subjects since the last release tag (you can edit it), then bumps the version, commits, tags, pushes and runs `pnpm publish`. Nothing changes until you confirm the plan. If your npm account uses two-factor auth, pnpm prompts for the code.
+It checks you are on an up-to-date `main` and logged in to npm, offers `git commit -p` for any pending changes, runs the linter, typecheck and unit tests, asks for patch, minor or major, drafts the `CHANGELOG.md` entry from commit subjects since the last release tag (you can edit it), then bumps the version, commits, tags, pushes and runs `pnpm publish`. Nothing changes until you confirm the plan. If your npm account uses two-factor auth, pnpm prompts for the code.
 
 The script is called `release`, not `publish`, because `pnpm publish` runs a script named `publish` itself.
 

@@ -46,13 +46,15 @@
   ],
   "scripts": {
     "build": "rm -rf dist && tsup",
+    "lint": "oxlint --deny-warnings",
+    "lint:fix": "oxlint --fix --deny-warnings",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit",
     "test:e2e": "pnpm build && vitest run --project e2e",
     "fixture": "node test/fixtures/create-fixture.mjs",
     "prepack": "pnpm build",
-    "prepublishOnly": "pnpm typecheck && pnpm test",
-    "release:check": "pnpm typecheck && pnpm test && pnpm test:e2e && pnpm pack --dry-run",
+    "prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test",
+    "release:check": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e && pnpm pack --dry-run",
     "release": "node scripts/release.mjs"
   },
   "peerDependencies": {

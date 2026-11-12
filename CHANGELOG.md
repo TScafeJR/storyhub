@@ -1,6 +1,5 @@
 # Changelog
 
-
 ## 0.2.0 (2026-11-12)
 
 - Add an interactive release script (npm run release)

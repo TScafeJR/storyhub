@@ -201,7 +201,7 @@ export const experimental_devServer = async (app: App, options: PresetOptions) =
         version
     });
 
-    app.use(async (req, res, next) => {
+    const handle = async (req: IncomingMessage, res: ServerResponse, next: Next) => {
         try {
             const url = new URL(req.url ?? '/', 'http://storyhub.local');
             if (url.pathname === MCP_PATH) return await mcp(req, res);
@@ -233,6 +233,13 @@ export const experimental_devServer = async (app: App, options: PresetOptions) =
             if (!res.headersSent) sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
             else res.end();
         }
+    };
+    app.use((req, res, next) => {
+        // handle() catches its own errors; this guards anything that still escapes
+        handle(req, res, next).catch(() => {
+            if (!res.headersSent) res.statusCode = 500;
+            res.end();
+        });
     });
     return app;
 };

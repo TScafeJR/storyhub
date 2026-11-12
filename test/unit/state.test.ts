@@ -16,7 +16,7 @@ beforeAll(async () => {
     hub = await StoryHub.create({
         cwd: fx.hub,
         configDir: join(fx.hub, '.storybook'),
-        isStoryFile: rel => /\.stories\.tsx$/.test(rel),
+        isStoryFile: rel => rel.endsWith('.stories.tsx'),
         previewFiles: ['.storybook/preview.tsx'],
         resolve: viteResolver(server)
     });

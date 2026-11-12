@@ -83,7 +83,7 @@ describe('storyhub on / off / list', () => {
         try {
             server = await resolverServer(fx.hub);
             cli(fx.worktrees['feat-new'], 'off');
-            hub = await StoryHub.create({ cwd: fx.hub, isStoryFile: rel => /\.stories\.tsx$/.test(rel), resolve: viteResolver(server) });
+            hub = await StoryHub.create({ cwd: fx.hub, isStoryFile: rel => rel.endsWith('.stories.tsx'), resolve: viteResolver(server) });
             expect(hub.branches.has('feat-new')).toBe(false);
             expect(hub.allWorktrees.find(w => w.id === 'feat-new')?.selected).toBe(false);
             expect(hub.branches.has('feat-button')).toBe(true);

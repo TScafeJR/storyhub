@@ -6,7 +6,11 @@ import { parseWorktreeList } from '../../src/core/worktrees.js';
 
 describe('extractSpecs', () => {
     beforeAll(async () => {
-        expect(await loadParser()).toBeTypeOf('function'); // resolved through Storybook's own oxc-parser
+        await loadParser();
+    });
+
+    it('loads the oxc parser through Storybook', async () => {
+        expect(await loadParser()).toBeTypeOf('function');
     });
 
     it('collects runtime imports, re-exports and literal dynamic imports, skipping type-only imports', () => {

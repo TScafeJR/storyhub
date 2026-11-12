@@ -50,10 +50,10 @@ interface Tool {
 const json = (value: unknown): ToolResult => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
 const fail = (message: string): ToolResult => ({ content: [{ type: 'text', text: message }], isError: true });
 
-function tools(deps: McpDeps): Tool[] {
-    const managerUrl = (origin: string, refId: string | null, storyId: string) => `${origin}/?path=/story/${refId ? `${refId}_` : ''}${storyId}`;
-    const iframeUrl = (origin: string, base: string, storyId: string) => `${origin}${base}/iframe.html?id=${encodeURIComponent(storyId)}&viewMode=story`;
+const managerUrl = (origin: string, refId: string | null, storyId: string) => `${origin}/?path=/story/${refId ? `${refId}_` : ''}${storyId}`;
+const iframeUrl = (origin: string, base: string, storyId: string) => `${origin}${base}/iframe.html?id=${encodeURIComponent(storyId)}&viewMode=story`;
 
+function tools(deps: McpDeps): Tool[] {
     return [
         {
             name: 'list-branches',

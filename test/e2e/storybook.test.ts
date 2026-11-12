@@ -44,6 +44,8 @@ const until = async <T>(fn: () => Promise<T | undefined | false>, what: string, 
 const branches = async () => (await (await fetch(`${base}/__storyhub/branches.json`)).json()).branches as Array<{ id: string; affectedStories: number; drift: string[] }>;
 const branchIndex = async (id: string) => (await (await fetch(`${base}/__storyhub/${id}/index.json`)).json()).entries as Record<string, { importPath: string }>;
 
+const toolJson = (r: unknown) => JSON.parse((r as { content: Array<{ text: string }> }).content[0].text);
+
 const sidebar = async (page: Page) => (await page.locator('#storybook-explorer-tree').innerText()).split('\n').map(s => s.trim()).filter(Boolean);
 
 const renderedRoot = async (page: Page, path: string, selector: string) => {
@@ -146,11 +148,11 @@ describe('storyhub in a real Storybook', () => {
     it('hot-updates a branch story when a worktree file is edited', async () => {
         const page = await browser.newPage();
         await renderedRoot(page, '/__storyhub/feat-button/iframe.html?id=components-button--primary&viewMode=story', '[data-testid=button]');
-        await page.evaluate(() => ((window as unknown as { __marker: number }).__marker = 42));
+        await page.evaluate(() => ((window as unknown as { storyhubMarker: number }).storyhubMarker = 42));
         const file = join(fx.worktrees['feat-button'], 'src/components/Button.tsx');
         writeFileSync(file, (await import('node:fs')).readFileSync(file, 'utf8').replace('{label} v2', '{label} v3'));
         await until(async () => (await page.locator('[data-testid=button]').innerText()) === 'Primary v3', 'HMR update');
-        expect(await page.evaluate(() => (window as unknown as { __marker?: number }).__marker)).toBe(42); // no full reload
+        expect(await page.evaluate(() => (window as unknown as { storyhubMarker?: number }).storyhubMarker)).toBe(42); // no full reload
         await page.close();
     });
 
@@ -209,11 +211,10 @@ describe('storyhub in a real Storybook', () => {
         const tools = (await client.listTools()).tools.map(t => t.name).sort();
         expect(tools).toEqual(['get-branch-changes', 'get-story-variants', 'list-branches', 'list-worktrees']);
 
-        const text = (r: unknown) => JSON.parse((r as { content: Array<{ text: string }> }).content[0].text);
-        const list = text(await client.callTool({ name: 'list-branches', arguments: {} }));
+        const list = toolJson(await client.callTool({ name: 'list-branches', arguments: {} }));
         expect(list.branches.map((b: { id: string }) => b.id)).toEqual(expect.arrayContaining(['feat-button', 'feat-label', 'feat-new', 'feat-theme', 'feat-ui']));
 
-        const changes = text(await client.callTool({ name: 'get-branch-changes', arguments: { branch: 'feat-label' } }));
+        const changes = toolJson(await client.callTool({ name: 'get-branch-changes', arguments: { branch: 'feat-label' } }));
         expect(changes.changes).toEqual([{ rel: 'src/components/Label.tsx', kind: 'M' }]);
         expect(changes.affected[0]).toMatchObject({
             file: 'src/components/Card.stories.tsx',
@@ -221,7 +222,7 @@ describe('storyhub in a real Storybook', () => {
             stories: [{ id: 'components-card--default', managerUrl: `${base}/?path=/story/feat-label_components-card--default` }]
         });
 
-        const variants = text(await client.callTool({ name: 'get-story-variants', arguments: { storyId: 'components-card--default' } }));
+        const variants = toolJson(await client.callTool({ name: 'get-story-variants', arguments: { storyId: 'components-card--default' } }));
         expect(variants.hub.iframeUrl).toBe(`${base}/iframe.html?id=components-card--default&viewMode=story`);
         expect(variants.variants.map((v: { branch: string }) => v.branch).sort()).toEqual(['feat-button', 'feat-label', 'feat-theme']);
         const page = await browser.newPage();
