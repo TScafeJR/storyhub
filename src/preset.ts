@@ -75,7 +75,7 @@ function indexContext(options: PresetOptions): Promise<IndexContext> {
 
 const refTitle = (branch: string | null, fallback: string) => `⎇ ${branch ?? fallback}`;
 
-export const managerEntries = (entries: string[] = []) => [...entries, fileURLToPath(new URL('./manager.js', import.meta.url))];
+// The manager entry is picked up by Storybook's addon convention (the package's `./manager` export).
 
 /** One composition ref per worktree, served by this same dev server. */
 export const refs = async (existing: Record<string, unknown> = {}, options: PresetOptions) => {

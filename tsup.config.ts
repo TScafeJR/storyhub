@@ -7,7 +7,6 @@ export default defineConfig([
         platform: 'node',
         target: 'node20',
         dts: { entry: { index: 'src/index.ts' } },
-        clean: true,
         sourcemap: true,
         external: [/^storybook(\/|$)/, 'vite']
     },

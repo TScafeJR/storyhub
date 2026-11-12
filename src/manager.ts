@@ -50,8 +50,14 @@ addons.register('storyhub', api => {
             const wanted = new Set(branches.map(b => b.id));
             for (const b of branches) {
                 const title = titleFor(b);
-                // the manager only keeps refs whose ids exist in the startup REFS object
-                REFS[b.id] ??= { id: b.id, title, url: b.refUrl, expanded: true };
+                if (!REFS[b.id] || !current[b.id]) {
+                    // The manager orders (and keeps) refs by the keys of its startup REFS object, so a
+                    // new ref must enter REFS and the store in the same tick: setRef runs updateRef
+                    // synchronously, before any other update can observe a key without state.
+                    const ref = { id: b.id, title, url: b.refUrl, expanded: true };
+                    REFS[b.id] = ref;
+                    void api.setRef(b.id, { ...ref, type: 'unknown' } as never);
+                }
                 await api.checkRef({ id: b.id, url: b.refUrl, title, expanded: current[b.id]?.expanded ?? true, type: 'unknown' } as never);
                 await api.updateRef(b.id, { title } as never);
             }
