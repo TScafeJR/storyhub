@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 (2026-11-12)
+
+- Restore oxlint and fix what it found in the webpack work
+- Add ROADMAP.md
+- Add webpack 5 support
+- Make change signalling builder-agnostic
+- release: pick the version with arrow keys
+
 ## 0.2.1 (2026-11-12)
 
 - Add oxlint and harden the release script
