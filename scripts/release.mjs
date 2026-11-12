@@ -47,6 +47,61 @@ rl.on('close', () => (inputClosed = true));
 const ask = async q => (inputClosed ? '' : (await rl.question(q).catch(() => '')).trim().toLowerCase());
 const confirm = async q => ['y', 'yes'].includes(await ask(`${q} [y/N] `));
 
+/**
+ * Arrow-key picker: ↑/↓ (or j/k) to move, Enter to choose, Esc / q / Ctrl-C to cancel, or press
+ * the first letter of an option. Without a terminal (piped input) it falls back to typing a name.
+ */
+async function select(question, items, initial = 0) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+        const names = items.map(i => i.value);
+        items.forEach(i => console.log(`  ${i.label.padEnd(8)} ${i.detail}`));
+        let answer = '';
+        while (!names.includes(answer)) {
+            answer = await ask(`${question} (${names.join('/')}): `);
+            if (!answer) return null;
+        }
+        return answer;
+    }
+    rl.pause();
+    const { emitKeypressEvents } = await import('node:readline');
+    emitKeypressEvents(process.stdin);
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    let index = Math.max(0, initial);
+    const out = process.stdout;
+    const render = first => {
+        if (!first) out.write(`\x1b[${items.length}A`);
+        for (const [i, item] of items.entries()) {
+            const active = i === index;
+            out.write(`\x1b[2K  ${active ? '\x1b[36m❯' : ' '} ${active ? bold(item.label.padEnd(8)) : item.label.padEnd(8)} ${active ? item.detail : dim(item.detail)}\x1b[0m\n`);
+        }
+    };
+    out.write(`  ${bold(question)} ${dim('(↑/↓, Enter)')}\n\x1b[?25l`);
+    render(true);
+    return new Promise(resolve => {
+        const done = value => {
+            process.stdin.off('keypress', onKey);
+            process.stdin.setRawMode(false);
+            out.write('\x1b[?25h');
+            rl.resume();
+            resolve(value);
+        };
+        const onKey = (str, key = {}) => {
+            if ((key.ctrl && key.name === 'c') || key.name === 'escape' || str === 'q') return done(null);
+            if (key.name === 'return' || key.name === 'enter') return done(items[index].value);
+            if (key.name === 'up' || str === 'k') index = (index - 1 + items.length) % items.length;
+            else if (key.name === 'down' || str === 'j') index = (index + 1) % items.length;
+            else {
+                const hit = items.findIndex(i => str && i.label.startsWith(str.toLowerCase()));
+                if (hit === -1) return;
+                index = hit;
+            }
+            render(false);
+        };
+        process.stdin.on('keypress', onKey);
+    });
+}
+
 const pkgPath = join(root, 'package.json');
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 console.log(`${bold(pkg.name)} ${pkg.version}${DRY ? dim('  (dry run: nothing will change)') : ''}`);
@@ -87,16 +142,18 @@ if (FULL) run('pnpm', ['test:e2e']);
 // 4. Pick the version.
 step('Version');
 const published = run('npm', ['view', `${pkg.name}@${pkg.version}`, 'version'], { quiet: true, allowFail: true }).out === pkg.version;
+const currentTagged = run('git', ['rev-parse', '--verify', '--quiet', `v${pkg.version}^{commit}`], { quiet: true, allowFail: true }).ok;
 const [maj, min, pat] = pkg.version.split('-')[0].split('.').map(Number);
 const choices = { patch: `${maj}.${min}.${pat + 1}`, minor: `${maj}.${min + 1}.0`, major: `${maj + 1}.0.0` };
-if (!published) console.log(`  current  ${pkg.version}  (not on npm yet)`);
-for (const [type, v] of Object.entries(choices)) console.log(`  ${type.padEnd(8)} ${v}`);
-const options = published ? 'patch/minor/major' : 'current/patch/minor/major';
-let type = '';
-while (!['patch', 'minor', 'major', ...(published ? [] : ['current'])].includes(type)) {
-    type = await ask(`Release type (${options}): `);
-    if (!type) fail('Cancelled.');
-}
+const items = [
+    // "publish as is" only makes sense for a version that is neither on npm nor already tagged
+    ...(!published && !currentTagged ? [{ value: 'current', label: 'current', detail: `${pkg.version}  (not on npm yet)` }] : []),
+    { value: 'patch', label: 'patch', detail: `${choices.patch}  fixes` },
+    { value: 'minor', label: 'minor', detail: `${choices.minor}  new features` },
+    { value: 'major', label: 'major', detail: `${choices.major}  breaking changes` }
+];
+const type = await select(`Release type for ${pkg.name} ${pkg.version}`, items, items.findIndex(i => i.value === 'patch'));
+if (!type) fail('Cancelled. Nothing was changed.');
 const next = type === 'current' ? pkg.version : choices[type];
 const tag = `v${next}`;
 const tagCommit = run('git', ['rev-parse', '--verify', '--quiet', `${tag}^{commit}`], { quiet: true, allowFail: true }).out;
