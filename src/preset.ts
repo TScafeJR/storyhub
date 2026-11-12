@@ -9,6 +9,7 @@ import type { StoryHub } from './core/state.js';
 import type { BranchSummary } from './core/types.js';
 import { isNodeModules, realpath, relInside } from './core/paths.js';
 import { isSelected, readSelection, type SelectionOptions } from './core/selection.js';
+import { gitCommonDir, registerServer } from './core/servers.js';
 import { gitToplevel, listWorktrees } from './core/worktrees.js';
 import { createMcpHandler } from './mcp/server.js';
 import { buildBranchIndex, isStoryFileFor, type IndexContext, type StoryIndex } from './server/branchIndex.js';
@@ -279,6 +280,19 @@ export const experimental_devServer = async (app: App, options: PresetOptions) =
             else res.end();
         }
     };
+    // tell the CLI which checkout this Storybook runs from, and where to reach it
+    void s.hub.promise
+        .then(async hub => {
+            const host = !options.host || options.host === '0.0.0.0' || options.host === '::' ? 'localhost' : String(options.host);
+            registerServer(await gitCommonDir(hub.root), {
+                root: hub.root,
+                configDir: options.configDir,
+                url: `${options.https ? 'https' : 'http'}://${host}:${options.port ?? 6006}`,
+                version
+            });
+        })
+        .catch(() => {});
+
     app.use((req, res, next) => {
         // handle() catches its own errors; this guards anything that still escapes
         handle(req, res, next).catch(() => {

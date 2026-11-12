@@ -70,7 +70,7 @@ function tools(deps: McpDeps): Tool[] {
             name: 'list-worktrees',
             title: 'List all worktrees and whether they are shown',
             description:
-                'Lists every git worktree of the repo, including ones not shown in Storybook. Branches are opt-in: to show the worktree you are working in, run `npx --no-install storyhub on` inside it (and `npx --no-install storyhub off` to hide it again). If the worktree has no node_modules, run it from the main checkout with the branch name instead: `npx --no-install storyhub on <branch>`.',
+                'Lists every git worktree of the repo, including ones not shown in Storybook. Branches are opt-in: to show the worktree you are working in, run `npx --no-install storyhub on` inside it (and `npx --no-install storyhub off` to hide it again). If the worktree has no node_modules, run it from a checkout that has storyhub installed, with the branch name: `npx --no-install storyhub on <branch>`.',
             inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
             run: async () => {
                 const hub = await deps.getHub();

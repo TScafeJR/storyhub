@@ -1,12 +1,13 @@
 import { EventEmitter } from 'node:events';
 import { existsSync, watch, type FSWatcher } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { classifyDrift, mergeBase, workingChanges } from './diff.js';
 import { git } from './git.js';
 import { buildBranchGraph, buildHubGraph, importChain, ResolveCache, reverseClosure, SpecCache, type Edges, type GraphContext } from './graph.js';
 import { realpath, relInside, toPosix } from './paths.js';
 import type { BranchState, BranchSummary, FileChange, ResolveFn, Worktree } from './types.js';
 import { isSelected, readSelection, type SelectionOptions } from './selection.js';
+import { gitCommonDir } from './servers.js';
 import { gitToplevel, listWorktrees } from './worktrees.js';
 
 export interface StoryHubOptions {
@@ -234,9 +235,7 @@ export class StoryHub extends EventEmitter {
     private commonDir = '';
 
     private async startWatching(): Promise<void> {
-        // relative (".git") from the main checkout but absolute from a linked worktree: resolve
-        // handles both, where join would glue an absolute path onto the root
-        this.commonDir = realpath(resolve(this.root, (await git(this.root, ['rev-parse', '--git-common-dir'])).trim()));
+        this.commonDir = await gitCommonDir(this.root);
         // git metadata: HEAD/packed-refs at the top, plus refs/ and worktrees/ (both small trees)
         this.watchGit(this.commonDir, false);
         this.watchGit(join(this.commonDir, 'refs'), true);
@@ -251,7 +250,8 @@ export class StoryHub extends EventEmitter {
         try {
             const w = watch(dir, { recursive }, (_event, file) => {
                 const name = file ? toPosix(String(file)) : '';
-                if (/(^|\/)(objects|logs|hooks|lfs|info)(\/|$)/.test(name) || name.endsWith('.lock')) return;
+                // storyhub/ holds our own server records; writing them must not trigger refreshes
+                if (/(^|\/)(objects|logs|hooks|lfs|info|storyhub)(\/|$)/.test(name) || name.endsWith('.lock')) return;
                 if (!recursive && name === 'worktrees') this.watchGit(join(this.commonDir, 'worktrees'), true);
                 this.ctx.resolver.clear();
                 this.schedule();

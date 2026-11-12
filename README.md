@@ -58,7 +58,7 @@ Check the setup from that same package directory:
 npx --no-install storyhub doctor
 ```
 
-Then start Storybook from your main checkout the way you always do (`npm run storybook`). Nothing new appears until you turn a branch on.
+Then start Storybook the way you always do (`npm run storybook`), usually from your main checkout. Whichever checkout runs it becomes the Common section; `storyhub list` marks it `★ hub` with its URL. Nothing new appears until you turn a branch on.
 
 ## Turn branches on
 
@@ -80,7 +80,7 @@ npx --no-install storyhub off feat/old-thing   # switch one off even when a glob
 
 The running Storybook picks changes up within a second, with no restart.
 
-`--no-install` makes npx use the copy installed in your project and fail rather than download a package from the registry. If a worktree has no `node_modules` of its own, run the command from the main checkout and pass the branch name. Inside `package.json` scripts, plain `storyhub on` works.
+`--no-install` makes npx use the copy installed in your project and fail rather than download a package from the registry. If a worktree has no `node_modules` of its own, run the command from a checkout that has storyhub installed (usually the main checkout) and pass the branch name. Inside `package.json` scripts, plain `storyhub on` works.
 
 The selection is stored as `storyhub.include` and `storyhub.exclude` entries in the repo's local `.git/config`. It is never committed, and every worktree of the repo sees the same selection.
 
@@ -161,7 +161,7 @@ addons: [
 | `storyhub off [target...]` | Hide worktrees. |
 | `storyhub list [--json]` | List every worktree and whether it is on. |
 | `storyhub clean [--base <ref>] [--older-than <days>] [--delete-branches] [--yes] [--json]` | Find and remove merged or idle worktrees. Dry run unless `--yes`. |
-| `storyhub status [--url <storybook url>] [--json]` | Affected stories and drift per branch, from the running Storybook. |
+| `storyhub status [--url <storybook url>] [--json]` | Affected stories and drift per branch, from the running Storybook (found automatically; `--url` overrides). |
 | `storyhub doctor [-c <config dir>]` | Check that this package is set up correctly. |
 | `storyhub --version` | Print the installed version. |
 

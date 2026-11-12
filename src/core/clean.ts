@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import { git, gitTry } from './git.js';
+import { realpath } from './paths.js';
 import { EXCLUDE_KEY, INCLUDE_KEY } from './selection.js';
+import { gitCommonDir, listServers } from './servers.js';
 import { parseWorktreeList } from './worktrees.js';
 
 /**
@@ -48,6 +50,7 @@ export async function findCleanupCandidates(cwd: string, opts: CleanOptions = {}
     const base = opts.base ?? (await defaultBase(main));
     const candidates: CleanCandidate[] = [];
     const prunable: string[] = [];
+    const running = new Map(listServers(await gitCommonDir(main)).map(s => [s.root, s.url]));
 
     // commits on the base's mainline: a HEAD here never diverged (an idle branch or a detached
     // checkout of main), as opposed to a feature branch that was merged in from the side
@@ -79,6 +82,7 @@ export async function findCleanupCandidates(cwd: string, opts: CleanOptions = {}
         const dirty = (await gitTry(e.path, ['status', '--porcelain']))?.trim();
         if (dirty) blockers.push(`uncommitted changes (${dirty.split('\n').length} path(s))`);
         if (e.locked) blockers.push('locked (git worktree unlock to allow removal)');
+        if (running.has(realpath(e.path))) blockers.push(`Storybook is running from it (${running.get(realpath(e.path))})`);
         if (!e.branch && !ancestor && !reasons.some(r => r.startsWith('changes already'))) {
             // a detached HEAD's commits are only reachable from the worktree itself
             if ((await git(main, ['rev-list', '--count', e.head, `^${base}`])).trim() !== '0') blockers.push('detached HEAD with commits not in the base');

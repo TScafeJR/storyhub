@@ -221,6 +221,19 @@ function suite(builder: 'vite' | 'webpack') {
             await page.close();
         });
 
+        it('registers itself so the CLI finds the checkout and URL without being told', () => {
+            const cliPath = join(fx.hub, 'node_modules/storyhub/dist/cli.js');
+            const cwd = fx.worktrees['feat-button'];
+            const run = (...args: string[]) => execFileSync(process.execPath, [cliPath, ...args], { cwd, encoding: 'utf8' });
+            const list = JSON.parse(run('list', '--json')) as { servers: Array<{ root: string; url: string }>; worktrees: Array<{ path: string; storybook: unknown }> };
+            expect(list.servers.map(x => x.url)).toContain(base);
+            expect(list.worktrees.find(w => w.path === fx.hub)?.storybook).toBe(base);
+            // no --url: status finds the running Storybook on its own
+            const status = JSON.parse(run('status', '--json')) as { source: string; branches: Array<{ id: string }> };
+            expect(status.source).toBe('server');
+            expect(status.branches.map(b => b.id)).toContain('feat-button');
+        });
+
         it('answers MCP tool calls about branches and story variants', async () => {
             const client = new Client({ name: 'storyhub-e2e', version: '0.0.0' });
             await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/storyhub/mcp`)));

@@ -1,10 +1,11 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { ViteDevServer } from 'vite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { findCleanupCandidates } from '../../src/core/clean.js';
 import { isSelected, matches, readSelection } from '../../src/core/selection.js';
+import { gitCommonDir, listServers, registerServer } from '../../src/core/servers.js';
 import { StoryHub } from '../../src/core/state.js';
 import { viteResolver } from '../../src/vite/resolver.js';
 // @ts-expect-error untyped fixture script
@@ -16,7 +17,13 @@ const cli = (cwd: string, ...args: string[]) => {
     const r = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1' } });
     return { code: r.status, out: r.stdout, err: r.stderr };
 };
-const listJson = (cwd: string) => JSON.parse(cli(cwd, 'list', '--json').out) as { include: string[]; exclude: string[]; worktrees: Array<{ branch: string; on: boolean; main: boolean }> };
+interface ListJson {
+    include: string[];
+    exclude: string[];
+    servers: Array<{ url: string; root: string }>;
+    worktrees: Array<{ branch: string; on: boolean; main: boolean; storybook: string | boolean }>;
+}
+const listJson = (cwd: string) => JSON.parse(cli(cwd, 'list', '--json').out) as ListJson;
 const isOn = (cwd: string, branch: string) => listJson(cwd).worktrees.find(w => w.branch === branch)?.on;
 
 let fx: Fixture;
@@ -71,10 +78,41 @@ describe('storyhub on / off / list', () => {
         expect(isOn(fx.hub, 'exp/one')).toBe(false);
     });
 
-    it('refuses to toggle the main checkout itself', () => {
-        const r = cli(fx.hub, 'on');
-        expect(r.code).toBe(1);
-        expect(r.err).toContain('main checkout');
+    it('detects the checkout Storybook actually runs from, even a worktree', async () => {
+        // a Storybook "running" from feat-new: the record this test process leaves is what a real
+        // Storybook leaves, and this process is alive, so the CLI treats it as running
+        const unregister = registerServer(await gitCommonDir(fx.hub), { root: fx.worktrees['feat-new'], configDir: '.storybook', url: 'http://localhost:6199', version: 'test' });
+        try {
+            const l = listJson(fx.hub);
+            const row = (b: string) => l.worktrees.find(w => w.branch === b);
+            expect(l.servers.map(x => x.url)).toEqual(['http://localhost:6199']);
+            expect(row('feat-new')?.storybook).toBe('http://localhost:6199');
+            expect(row('main')).toMatchObject({ storybook: false, main: true });
+            expect(cli(fx.hub, 'list').out).toContain('Storybook is running from');
+
+            // the checkout running Storybook cannot be a branch of itself
+            const refused = cli(fx.worktrees['feat-new'], 'on');
+            expect(refused.code).toBe(1);
+            expect(refused.err).toContain('Storybook is running from this checkout (http://localhost:6199)');
+            // ...but the main checkout can now be shown as a branch
+            expect(cli(fx.hub, 'on').out).toContain('on   main');
+            expect(isOn(fx.hub, 'main')).toBe(true);
+            cli(fx.hub, 'off');
+            expect(isOn(fx.hub, 'main')).toBe(false);
+        } finally {
+            unregister();
+        }
+        // once it stops, nothing is marked as the hub
+        expect(listJson(fx.hub).worktrees.some(w => w.storybook)).toBe(false);
+    });
+
+    it('ignores records left by Storybooks that are no longer running', async () => {
+        const dir = join(await gitCommonDir(fx.hub), 'storyhub', 'servers');
+        mkdirSync(dir, { recursive: true });
+        const stale = join(dir, '999999.json');
+        writeFileSync(stale, JSON.stringify({ pid: 999999, root: fx.hub, configDir: '.storybook', url: 'http://localhost:1', version: 'x', startedAt: new Date().toISOString() }));
+        expect(listServers(await gitCommonDir(fx.hub))).toEqual([]);
+        expect(existsSync(stale)).toBe(false); // cleaned up
     });
 
     it('StoryHub only computes worktrees that are on', async () => {
@@ -119,6 +157,13 @@ describe('storyhub clean', () => {
         expect(by('feat-label').removable).toBe(false);
         expect(by('feat-label').blockers[0]).toContain('uncommitted changes');
         expect(by('feat-ui').reasons).toEqual([]);
+
+        // a worktree Storybook is running from is never removed, even when merged
+        const unregister = registerServer(await gitCommonDir(c.hub), { root: c.worktrees['feat-button'], configDir: '.storybook', url: 'http://localhost:6198', version: 'test' });
+        const whileRunning = (await findCleanupCandidates(c.hub)).candidates.find(x => x.branch === 'feat-button')!;
+        expect(whileRunning.removable).toBe(false);
+        expect(whileRunning.blockers).toContain('Storybook is running from it (http://localhost:6198)');
+        unregister();
 
         const dry = cli(c.hub, 'clean');
         expect(dry.out).toContain('Dry run');

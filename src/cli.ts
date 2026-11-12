@@ -6,6 +6,7 @@ import { classifyDrift, mergeBase, workingChanges } from './core/diff.js';
 import { git, gitTry } from './core/git.js';
 import { realpath } from './core/paths.js';
 import { EXCLUDE_KEY, INCLUDE_KEY, isSelected, matches, readSelection, setSelected } from './core/selection.js';
+import { gitCommonDir, listServers, type ServerRecord } from './core/servers.js';
 import type { Worktree } from './core/types.js';
 import { gitToplevel, listWorktrees, parseWorktreeList } from './core/worktrees.js';
 
@@ -13,6 +14,7 @@ const HELP = `storyhub: your git worktrees as branch sections in one Storybook
 
 Choosing branches (opt-in; stored in this repo's local git config, never committed):
   storyhub on [target...]     Show worktrees in Storybook. No target = the worktree you are in.
+                              Any checkout can run Storybook; list marks it ★ hub.
   storyhub off [target...]    Hide them again. No target = the worktree you are in.
   storyhub list [--json]      Every worktree and whether it is on.
       A target is a branch (feat/login), a worktree id or directory name, a path, or a glob
@@ -26,8 +28,8 @@ Cleaning up:
       also deletes merged branches with git branch -d.
 
 Inspecting:
-  storyhub status [--url http://localhost:6006] [--json]
-      Branch summary from the running Storybook (affected stories, drift), or git-only.
+  storyhub status [--url <url>] [--json]
+      Branch summary from the running Storybook (found automatically), or git-only.
   storyhub doctor [-c <dir>]  Checks this package and checkout for what storyhub needs.
   storyhub --version
 `;
@@ -54,21 +56,33 @@ const positional = () => {
     return out;
 };
 
-/** The repo's worktrees, flagging the main working tree (git lists it first) as the hub. */
-async function repoWorktrees(): Promise<{ main: string; worktrees: Worktree[] }> {
+/**
+ * The repo's worktrees. `isHub` marks checkouts a Storybook is running from right now (found via
+ * the records running Storybooks leave in the shared git directory), not the main checkout.
+ */
+async function repoWorktrees(): Promise<{ main: string; here: string; worktrees: Worktree[]; servers: ServerRecord[] }> {
     const here = await gitToplevel(process.cwd());
     const main = realpath(parseWorktreeList(await git(here, ['worktree', 'list', '--porcelain']))[0]?.path ?? here);
-    return { main, worktrees: await listWorktrees(main) };
+    const servers = listServers(await gitCommonDir(here));
+    const hubs = new Set(servers.map(s => s.root));
+    const worktrees = (await listWorktrees(main)).map(w => ({ ...w, isHub: hubs.has(w.path) }));
+    return { main, here, worktrees, servers };
 }
 
+const serverFor = (servers: ServerRecord[], root: string) => servers.find(s => s.root === root);
+
 async function toggle(on: boolean) {
-    const { main, worktrees } = await repoWorktrees();
+    const { main, here, worktrees, servers } = await repoWorktrees();
     const targets = positional();
     if (!targets.length) {
-        const here = await gitToplevel(process.cwd());
         const wt = worktrees.find(w => w.path === here);
-        if (!wt || wt.isHub) {
-            console.error(`storyhub: ${here} is the main checkout (the one that runs Storybook). Run this inside a worktree, or name one: storyhub ${cmd} <branch>`);
+        if (wt?.isHub) {
+            console.error(`storyhub: Storybook is running from this checkout (${serverFor(servers, here)?.url}), so its stories are already the Common section. Run this inside another worktree, or name one: storyhub ${cmd} <branch>`);
+            process.exitCode = 1;
+            return;
+        }
+        if (!wt) {
+            console.error(`storyhub: ${here} is not a worktree of this repo.`);
             process.exitCode = 1;
             return;
         }
@@ -107,19 +121,30 @@ async function toggle(on: boolean) {
 }
 
 async function list() {
-    const { main, worktrees } = await repoWorktrees();
+    const { main, worktrees, servers } = await repoWorktrees();
     const sel = await readSelection(main);
     const rows = await Promise.all(
         worktrees.map(async wt => {
             const log = (await gitTry(main, ['log', '-1', '--format=%cr%x00%s', wt.head]))?.trim().split('\0') ?? [];
-            return { id: wt.id, branch: wt.branch, path: wt.path, main: wt.isHub, on: isSelected(wt, sel), lastCommit: log[0] ?? null, subject: log[1] ?? null };
+            return {
+                id: wt.id,
+                branch: wt.branch,
+                path: wt.path,
+                main: wt.path === main,
+                storybook: wt.isHub ? (serverFor(servers, wt.path)?.url ?? true) : false,
+                on: isSelected(wt, sel),
+                lastCommit: log[0] ?? null,
+                subject: log[1] ?? null
+            };
         })
     );
-    if (has('--json')) return console.log(JSON.stringify({ mode: sel.mode, include: sel.include, exclude: sel.exclude, worktrees: rows }, null, 2));
+    if (has('--json')) return console.log(JSON.stringify({ mode: sel.mode, include: sel.include, exclude: sel.exclude, servers, worktrees: rows }, null, 2));
     for (const r of rows) {
-        const mark = r.main ? '  main' : r.on ? '● on  ' : '○ off ';
-        console.log(`${mark}  ${(r.branch ?? '(detached)').padEnd(40)}  ${(r.lastCommit ?? '').padEnd(16)}  ${r.path}`);
+        const mark = r.storybook ? '★ hub ' : r.on ? '● on  ' : '○ off ';
+        console.log(`${mark}  ${(r.branch ?? '(detached)').padEnd(40)}  ${(r.lastCommit ?? '').padEnd(16)}  ${r.path}${r.main ? '  (main checkout)' : ''}`);
     }
+    if (servers.length) for (const s of servers) console.log(`\n★ Storybook is running from ${s.root} at ${s.url}; its stories are the Common section.`);
+    else console.log('\nStorybook is not running. Whichever checkout you start it from becomes the Common section.');
     if (sel.include.length || sel.exclude.length) console.log(`\npatterns: include [${sel.include.join(', ')}]  exclude [${sel.exclude.join(', ')}]`);
     if (!rows.some(r => r.on)) console.log('\nNothing is on yet. Inside a worktree run `storyhub on`, or `storyhub on <branch>`.');
 }
@@ -144,7 +169,15 @@ async function clean() {
 }
 
 async function status() {
-    const url = (flag('--url') ?? 'http://localhost:6006').replace(/\/$/, '');
+    // prefer the Storybook this checkout belongs to: the one running from here, else the first found
+    let detected: ServerRecord | undefined;
+    try {
+        const { here, servers } = await repoWorktrees();
+        detected = serverFor(servers, here) ?? servers[0];
+    } catch {
+        detected = undefined;
+    }
+    const url = (flag('--url') ?? detected?.url ?? 'http://localhost:6006').replace(/\/$/, '');
     let branches: Array<Record<string, unknown>> | null = null;
     try {
         const r = await fetch(`${url}/__storyhub/branches.json`, { signal: AbortSignal.timeout(2000) });
@@ -187,9 +220,10 @@ async function doctor() {
         checks.push(['git checkout', false, 'run inside a git repository']);
     }
     if (root) {
-        const { main, worktrees } = await repoWorktrees();
+        const { main, worktrees, servers } = await repoWorktrees();
         const sel = await readSelection(main);
         const on = worktrees.filter(w => isSelected(w, sel)).length;
+        checks.push(['storybook running', true, servers.length ? servers.map(s => `${s.url} from ${s.root}`).join('; ') : 'not running (informational)']);
         checks.push(['other worktrees', worktrees.length > 1, worktrees.length > 1 ? `${worktrees.length - 1} found, ${on} on` : 'none yet; `git worktree add ../my-feature -b my-feature`']);
     }
     const { createRequire } = await import('node:module');
