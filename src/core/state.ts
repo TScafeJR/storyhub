@@ -59,6 +59,9 @@ export class StoryHub extends EventEmitter {
     private running: Promise<void> | null = null;
     private rerun = false;
     private lastFingerprint = '';
+    /** Per-branch shape (dirty files + affected stories); a change means rendered modules are stale. */
+    private shapes = new Map<string, string>();
+    private previewFingerprint: string | undefined;
     private configDirRel: string | null;
 
     private constructor(root: string, private opts: StoryHubOptions) {
@@ -124,12 +127,25 @@ export class StoryHub extends EventEmitter {
         this.branches = new Map([...branches].sort(([a], [b]) => a.localeCompare(b)));
         this.syncWatchers();
 
+        // 'structure': branches whose dirty set or story list changed since the last refresh. Their
+        // already-built modules may resolve imports the old way, so builders rebuild them and
+        // their iframes reload. Branches seen for the first time need no reload.
+        const shapes = new Map([...this.branches].map(([id, b]) => [id, JSON.stringify([[...b.dirty].sort(), b.affectedStories])]));
+        const restructured = [...shapes].filter(([id, shape]) => this.shapes.has(id) && this.shapes.get(id) !== shape).map(([id]) => id);
+        this.shapes = shapes;
+        // 'previews': which branches load their own preview files changed
+        const previewFingerprint = JSON.stringify([...this.branches.values()].filter(b => b.previewOverrides.length).map(b => [b.worktree.id, b.previewOverrides]));
+        const previewsChanged = this.previewFingerprint !== undefined && this.previewFingerprint !== previewFingerprint;
+        this.previewFingerprint = previewFingerprint;
+
         const fingerprint = JSON.stringify([...this.branches.values()].map(b => [b.worktree, b.mergeBase, b.changes, b.drift, b.affectedStories, b.previewOverrides, b.error]));
         if (fingerprint !== this.lastFingerprint) {
             this.lastFingerprint = fingerprint;
             this.opts.log?.(`storyhub: ${this.branches.size} branch(es) refreshed in ${Date.now() - started}ms`);
             this.emit('change', this.summaries());
         }
+        if (previewsChanged) this.emit('previews');
+        if (restructured.length) this.emit('structure', restructured);
     }
 
     private async computeBranch(

@@ -11,7 +11,7 @@ import { isSelected, readSelection, type SelectionOptions } from './core/selecti
 import { gitToplevel, listWorktrees } from './core/worktrees.js';
 import { createMcpHandler } from './mcp/server.js';
 import { buildBranchIndex, isStoryFileFor, type IndexContext, type StoryIndex } from './server/branchIndex.js';
-import { RELOAD_EVENT, storyhubVitePlugin } from './vite/plugin.js';
+import { storyhubVitePlugin } from './vite/plugin.js';
 
 export const REF_BASE = '/__storyhub';
 export const MCP_PATH = '/storyhub/mcp';
@@ -179,11 +179,25 @@ async function branchIndex(options: PresetOptions, id: string): Promise<StoryInd
 const originOf = (options: PresetOptions, req: IncomingMessage) => `${options.https ? 'https' : 'http'}://${req.headers.host ?? `localhost:${options.port ?? 6006}`}`;
 
 /** Injected into each branch iframe: reload when the branch's structure (dirty/affected sets) changes. */
-const reloadSnippet = (id: string) => `<script type="module">
-import { createHotContext } from '/@vite/client';
-const hot = createHotContext('/__storyhub/${id}/iframe.html');
-hot.on(${JSON.stringify(RELOAD_EVENT)}, ({ ids }) => { if (ids.includes(${JSON.stringify(id)})) location.reload(); });
+/**
+ * Injected into each branch iframe: reload when that branch's structure changes. Uses a plain
+ * server-sent event stream so it works the same with every builder.
+ */
+const reloadSnippet = (id: string) => `<script>
+(function () {
+  if (typeof EventSource === 'undefined') return;
+  var source = new EventSource('${REF_BASE}/events');
+  source.addEventListener('reload', function (e) {
+    try { if (JSON.parse(e.data).ids.indexOf(${JSON.stringify(id)}) !== -1) location.reload(); } catch (err) { /* ignore malformed events */ }
+  });
+})();
 </script>`;
+
+/** Open server-sent event streams (branch iframes waiting for reload signals). */
+const eventClients = new Set<ServerResponse>();
+const broadcast = (event: string, data: unknown) => {
+    for (const res of eventClients) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+};
 
 const sendJson = (res: ServerResponse, status: number, body: unknown) => {
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -207,6 +221,17 @@ export const experimental_devServer = async (app: App, options: PresetOptions) =
             if (url.pathname === MCP_PATH) return await mcp(req, res);
             if (!url.pathname.startsWith(`${REF_BASE}/`)) return next();
             const rest = url.pathname.slice(REF_BASE.length + 1);
+            if (rest === 'events') {
+                res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' });
+                res.write(': storyhub\n\n');
+                eventClients.add(res);
+                const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
+                req.on('close', () => {
+                    clearInterval(ping);
+                    eventClients.delete(res);
+                });
+                return;
+            }
             if (rest === 'branches.json') {
                 const hub = await s.hub.promise;
                 return sendJson(res, 200, { branches: hub.summaries() satisfies BranchSummary[] });
@@ -248,6 +273,8 @@ export const experimental_serverChannel = async (channel: Channel, options: Pres
     if (!isDev(options)) return channel;
     void session(options.configDir).hub.promise.then(hub => {
         hub.on('change', (summaries: BranchSummary[]) => channel.emit(BRANCHES_EVENT, summaries));
+        hub.on('structure', (ids: string[]) => broadcast('reload', { ids }));
+        hub.on('previews', () => broadcast('reload', { ids: [...hub.branches.keys()] }));
     });
     return channel;
 };

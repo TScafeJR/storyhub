@@ -8,7 +8,6 @@ import { listWorktrees } from '../core/worktrees.js';
 import { viteResolver } from './resolver.js';
 
 export const IMPORT_PREFIX = 'storyhub:';
-export const RELOAD_EVENT = 'storyhub:reload';
 const STORIES_MODULE = 'storybook-stories.js';
 const ANNOTATIONS_MODULE = 'project-annotations.js';
 /** Matches `/__storyhub/<id>/` in a branch iframe's URL. */
@@ -114,44 +113,35 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
     let hubPromise: Promise<StoryHub> | undefined;
     let server: ViteDevServer | undefined;
     let allow: string[] | undefined;
-    const structure = new Map<string, string>();
-    let previewFingerprint = '';
     let viteRoot = process.cwd();
-    // only branches that actually override a preview file matter; others must not force reloads
-    const previewFp = () => JSON.stringify([...(hub?.branches.values() ?? [])].filter(b => b.previewOverrides.length).map(b => [b.worktree.id, b.previewOverrides]));
 
     const allowRoots = (roots: string[]) => {
         if (!allow) return;
         for (const r of roots) if (!allow.includes(r)) allow.push(r);
     };
 
+    /** builder-vite regenerates (and HMR-patches) its virtual modules on a watcher change event. */
+    const regenerate = (suffix: string) => {
+        if (!server) return;
+        for (const id of server.moduleGraph.idToModuleMap.keys()) if (id.endsWith(suffix)) server.watcher.emit('change', id);
+    };
+
     const onChange = () => {
-        if (!hub || !server) return;
+        if (!hub) return;
         allowRoots(hub.worktrees.map(w => w.path));
-        // builder-vite regenerates (and HMR-patches) the virtual stories module on this event
-        const fp = previewFp();
-        const previewsChanged = fp !== previewFingerprint;
-        previewFingerprint = fp;
-        for (const id of server.moduleGraph.idToModuleMap.keys()) {
-            if (id.endsWith(STORIES_MODULE) || (previewsChanged && id.endsWith(ANNOTATIONS_MODULE))) server.watcher.emit('change', id);
-        }
-        const reload: string[] = [];
-        const seen = new Set<string>();
-        for (const b of hub.branches.values()) {
-            seen.add(b.worktree.id);
-            const shape = JSON.stringify([[...b.dirty].sort(), b.affectedStories]);
-            const prev = structure.get(b.worktree.id);
-            structure.set(b.worktree.id, shape);
-            if (prev !== undefined && prev !== shape) {
-                reload.push(b.worktree.id);
-                // resolution decisions baked into transformed worktree modules are now stale
-                for (const [file, mods] of server.moduleGraph.fileToModulesMap) {
-                    if (relInside(b.worktree.path, file) !== null) for (const m of mods) server.moduleGraph.invalidateModule(m);
-                }
+        regenerate(STORIES_MODULE);
+    };
+
+    /** Resolution decisions baked into transformed worktree modules are stale for these branches. */
+    const onStructure = (ids: string[]) => {
+        if (!hub || !server) return;
+        for (const id of ids) {
+            const b = hub.branches.get(id);
+            if (!b) continue;
+            for (const [file, mods] of server.moduleGraph.fileToModulesMap) {
+                if (relInside(b.worktree.path, file) !== null) for (const m of mods) server.moduleGraph.invalidateModule(m);
             }
         }
-        for (const id of structure.keys()) if (!seen.has(id)) structure.delete(id);
-        if (reload.length) server.ws.send({ type: 'custom', event: RELOAD_EVENT, data: { ids: reload } });
     };
 
     const start = (): Promise<StoryHub> => {
@@ -170,11 +160,11 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
             log: opts.log
         }).then(h => {
             hub = h;
-            for (const b of h.branches.values()) structure.set(b.worktree.id, JSON.stringify([[...b.dirty].sort(), b.affectedStories]));
-            previewFingerprint = previewFp();
             allowRoots(h.worktrees.map(w => w.path));
             server!.watcher.on('all', (event, file) => h.notify(event, file));
             h.on('change', onChange);
+            h.on('structure', onStructure);
+            h.on('previews', () => regenerate(ANNOTATIONS_MODULE));
             server!.httpServer?.once('close', () => void h.close());
             opts.onHub?.(h, server!);
             onChange();
