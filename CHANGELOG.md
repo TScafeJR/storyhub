@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 (2026-11-12)
+
+- Add oxlint and harden the release script
+
 ## 0.2.0 (2026-11-12)
 
 - Add an interactive release script (npm run release)
