@@ -30,7 +30,7 @@ const DRIFT_HELP = {
 
 const INSTRUCTIONS =
     'storyhub renders opted-in git worktrees of this repo as branch sections in one Storybook ' +
-    '(turn one on with `npx storyhub on` inside it; list-worktrees shows what is on). ' +
+    '(turn one on with `npx --no-install storyhub on` inside it; list-worktrees shows what is on). ' +
     'Branch sections only contain stories whose rendering that branch changes. Use list-branches first, ' +
     'get-branch-changes to see what a branch touched and why each story is affected, and get-story-variants ' +
     'to get side-by-side URLs (hub vs branches) for a story id.';
@@ -70,13 +70,18 @@ function tools(deps: McpDeps): Tool[] {
             name: 'list-worktrees',
             title: 'List all worktrees and whether they are shown',
             description:
-                'Lists every git worktree of the repo, including ones not shown in Storybook. Branches are opt-in: to show the worktree you are working in, run `npx storyhub on` inside it (and `npx storyhub off` to hide it again).',
+                'Lists every git worktree of the repo, including ones not shown in Storybook. Branches are opt-in: to show the worktree you are working in, run `npx --no-install storyhub on` inside it (and `npx --no-install storyhub off` to hide it again). If the worktree has no node_modules, run it from the main checkout with the branch name instead: `npx --no-install storyhub on <branch>`.',
             inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
             run: async () => {
                 const hub = await deps.getHub();
                 return json({
                     worktrees: hub.allWorktrees.map(w => ({ id: w.id, branch: w.branch, path: w.path, hub: w.isHub, shown: w.selected })),
-                    howTo: { show: 'cd <worktree> && npx storyhub on', hide: 'cd <worktree> && npx storyhub off', listFromShell: 'npx storyhub list' }
+                    howTo: {
+                        show: 'cd <worktree> && npx --no-install storyhub on',
+                        hide: 'cd <worktree> && npx --no-install storyhub off',
+                        fromMainCheckout: 'npx --no-install storyhub on <branch>',
+                        list: 'npx --no-install storyhub list'
+                    }
                 });
             }
         },

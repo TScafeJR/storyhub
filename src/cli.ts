@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { basename } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { findCleanupCandidates, removeWorktrees } from './core/clean.js';
 import { classifyDrift, mergeBase, workingChanges } from './core/diff.js';
 import { git, gitTry } from './core/git.js';
@@ -8,7 +9,7 @@ import { EXCLUDE_KEY, INCLUDE_KEY, isSelected, matches, readSelection, setSelect
 import type { Worktree } from './core/types.js';
 import { gitToplevel, listWorktrees, parseWorktreeList } from './core/worktrees.js';
 
-const HELP = `storyhub: git worktrees as branch sections in one Storybook
+const HELP = `storyhub: your git worktrees as branch sections in one Storybook
 
 Choosing branches (opt-in; stored in this repo's local git config, never committed):
   storyhub on [target...]     Show worktrees in Storybook. No target = the worktree you are in.
@@ -27,8 +28,11 @@ Cleaning up:
 Inspecting:
   storyhub status [--url http://localhost:6006] [--json]
       Branch summary from the running Storybook (affected stories, drift), or git-only.
-  storyhub doctor             Checks this checkout for what storyhub needs.
+  storyhub doctor [-c <dir>]  Checks this package and checkout for what storyhub needs.
+  storyhub --version
 `;
+
+const version: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
@@ -42,7 +46,7 @@ const positional = () => {
     const out: string[] = [];
     for (let i = 0; i < rest.length; i++) {
         if (rest[i].startsWith('--')) {
-            if (['--base', '--older-than', '--url'].includes(rest[i])) i++;
+            if (['--base', '--older-than', '--url', '--config-dir'].includes(rest[i])) i++;
             continue;
         }
         out.push(rest[i]);
@@ -173,9 +177,11 @@ async function status() {
 
 async function doctor() {
     const checks: Array<[string, boolean, string]> = [];
+    const cwd = process.cwd();
+    checks.push(['storyhub', true, version]);
     let root = '';
     try {
-        root = await gitToplevel(process.cwd());
+        root = await gitToplevel(cwd);
         checks.push(['git checkout', true, root]);
     } catch {
         checks.push(['git checkout', false, 'run inside a git repository']);
@@ -186,26 +192,37 @@ async function doctor() {
         const on = worktrees.filter(w => isSelected(w, sel)).length;
         checks.push(['other worktrees', worktrees.length > 1, worktrees.length > 1 ? `${worktrees.length - 1} found, ${on} on` : 'none yet; `git worktree add ../my-feature -b my-feature`']);
     }
+    const { createRequire } = await import('node:module');
+    const req = createRequire(`${cwd}/`);
+    let pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> } = {};
     try {
-        const { createRequire } = await import('node:module');
-        const req = createRequire(`${process.cwd()}/`);
+        pkg = JSON.parse(readFileSync(join(cwd, 'package.json'), 'utf8'));
+    } catch {
+        // no package.json here; the checks below report what is missing
+    }
+    const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+    try {
         const sb = req('storybook/package.json').version as string;
         const [major, minor] = sb.split('.').map(Number);
         checks.push(['storybook >= 10.5', major > 10 || (major === 10 && minor >= 5), sb]);
-        try {
-            checks.push(['vite builder', true, req('@storybook/builder-vite/package.json').version]);
-        } catch {
-            checks.push(['vite builder', false, 'storyhub supports Vite-based Storybook frameworks only']);
-        }
     } catch {
-        checks.push(['storybook installed', false, 'run from the package that has Storybook installed']);
+        checks.push(['storybook installed', false, 'run this from the package that has Storybook installed (e.g. frontend/ in a monorepo)']);
     }
+    const configDir = join(cwd, flag('-c') ?? flag('--config-dir') ?? '.storybook');
+    const mainFile = ['main.ts', 'main.js', 'main.mjs', 'main.cjs', 'main.mts', 'main.cts'].map(f => join(configDir, f)).find(f => existsSync(f));
+    const mainText = mainFile ? readFileSync(mainFile, 'utf8') : '';
+    const framework = deps.find(d => /^@storybook\/[\w-]+-vite$/.test(d) || d === '@storybook/builder-vite') ?? /@storybook\/[\w-]+-vite/.exec(mainText)?.[0];
+    checks.push(['vite-based framework', Boolean(framework), framework ?? 'storyhub needs a Vite-based Storybook framework such as @storybook/react-vite']);
+    checks.push(['storyhub installed here', deps.includes('storyhub'), deps.includes('storyhub') ? 'yes' : 'add it as a devDependency of this package: npm install -D -E storyhub']);
+    if (!mainFile) checks.push(['storybook config', false, `no main.* in ${configDir} (pass -c <dir> if it lives elsewhere)`]);
+    else checks.push(['addon registered', /['"]storyhub['"]/.test(mainText), /['"]storyhub['"]/.test(mainText) ? mainFile : `add 'storyhub' to addons in ${mainFile}`]);
     for (const [name, ok, detail] of checks) console.log(`${ok ? '✓' : '✗'} ${name}: ${detail}`);
     if (checks.some(c => !c[1])) process.exitCode = 1;
 }
 
 try {
-    if (cmd === 'on') await toggle(true);
+    if (cmd === '--version' || cmd === '-v' || cmd === 'version') console.log(version);
+    else if (cmd === 'on') await toggle(true);
     else if (cmd === 'off') await toggle(false);
     else if (cmd === 'list') await list();
     else if (cmd === 'clean') await clean();

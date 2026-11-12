@@ -1,7 +1,7 @@
 {
   "name": "storyhub",
   "version": "0.1.0",
-  "description": "Render every git worktree's UI changes as branch sections in a single Storybook, with MCP support",
+  "description": "One Storybook for all your git worktrees: opt-in branch sections that show only the stories each branch changes, with a CLI and MCP server",
   "keywords": [
     "storybook",
     "storybook-addon",
@@ -41,7 +41,8 @@
     "dist",
     "preset.js",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "rm -rf dist && tsup",
@@ -77,13 +78,7 @@
   "storybook": {
     "displayName": "storyhub",
     "supportedFrameworks": [
-      "react",
-      "react-native-web",
-      "vue",
-      "svelte",
-      "preact",
-      "html",
-      "web-components"
+      "react"
     ]
   },
   "packageManager": "pnpm@10.33.0"

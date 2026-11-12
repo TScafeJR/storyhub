@@ -82,7 +82,8 @@ const hubFiles = {
             private: true,
             type: 'module',
             workspaces: ['packages/*'],
-            dependencies: { react: depsManifest.dependencies.react, '@fixture/ui': 'workspace:*' }
+            dependencies: { react: depsManifest.dependencies.react, '@fixture/ui': 'workspace:*' },
+            devDependencies: { storybook: depsManifest.dependencies.storybook, '@storybook/react-vite': depsManifest.dependencies['@storybook/react-vite'], storyhub: libPkg.version }
         },
         null,
         2
