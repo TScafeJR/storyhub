@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0 (2026-11-13)
+
+- Generate Tailwind classes used only in branches (Tailwind 3 and 4)
+- Fix imports of branch-only files through path aliases
+
 ## 0.5.2 (2026-11-12)
 
 - Keep storyhub's dev-server routes for local use
