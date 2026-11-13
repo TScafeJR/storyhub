@@ -77,7 +77,7 @@ storyhub is tested on React with Vite and webpack. The overlay model is framewor
 - **React Native Web** (`@storybook/react-native-web-vite`). Already piloted; turn it into a fixture so it stays working.
 - **HTML and other renderers** (`@storybook/html-vite`, Ember, Qwik). Only on request; the generic path should work, and a fixture proves it.
 - **rsbuild and rspack** (`storybook-rsbuild`, `storybook-react-rsbuild`). rspack implements most of webpack's resolver hooks, so the webpack adapter is the starting point. Done when the same E2E suite passes on rsbuild.
-- **Content-scanning CSS** (Tailwind, UnoCSS). These generate CSS from class names found in the hub's files, so a class used only in a branch may be missing from its render. Confirm with a fixture, then add each branch's dirty files to the scanner's sources (Tailwind 4's `@source`, Uno's `content`). Done when a branch that adds a new utility class renders it.
+- **UnoCSS and other content-scanning CSS.** Tailwind 3 and 4 are handled since 0.6 (see the README). UnoCSS generates CSS the same way, from class names found in the hub's files, so a class used only in a branch may be missing from its render. Uno reads extra paths from its `content` option, so the Tailwind 3 approach (a config wrapper that mirrors globs into worktrees) is the likely starting point. Done when a branch that adds a new Uno utility renders it.
 
 ## 1.0: a contract you can build on
 

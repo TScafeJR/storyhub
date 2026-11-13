@@ -4,6 +4,7 @@ import { searchForWorkspaceRoot, type Plugin, type ViteDevServer } from 'vite';
 import { cleanId, isNodeModules, realpath, relInside } from '../core/paths.js';
 import { resolveFromWorktree } from '../core/resolve.js';
 import { StoryHub } from '../core/state.js';
+import { CACHE_DIR, isTailwind4Entry, withWorktreeSources } from '../core/tailwind.js';
 import { isSelected, readSelection, type SelectionOptions } from '../core/selection.js';
 import { listWorktrees } from '../core/worktrees.js';
 import { BRANCH_FROM_LOCATION, branchImportersCode } from '../codegen.js';
@@ -11,6 +12,8 @@ import { viteResolver } from './resolver.js';
 
 const STORIES_MODULE = 'storybook-stories.js';
 const ANNOTATIONS_MODULE = 'project-annotations.js';
+/** CSS requests that are not stylesheets (raw text, URLs, workers). */
+const SPECIAL_QUERY = /[?&](?:raw|url|worker|sharedworker)\b/;
 
 export interface StoryhubVitePluginOptions {
     gitRoot: string;
@@ -79,8 +82,12 @@ if (__storyhubPreviewModules.length) {
  * aliases and bare packages behave identically and dependencies come from the hub's node_modules.
  * The resolved file then lands in the worktree only when it is dirty for that branch (changed, or
  * importing something changed); otherwise the hub's module instance is shared.
+ *
+ * Returns two plugins: the overlay itself, and one that adds the enabled worktrees to Tailwind 4
+ * entry stylesheets as `@source` paths, so classes used only in a branch are generated. That one
+ * transforms with `order: 'pre'`, ahead of Tailwind's own Vite plugin.
  */
-export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
+export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin[] {
     let hub: StoryHub | undefined;
     let hubPromise: Promise<StoryHub> | undefined;
     let server: ViteDevServer | undefined;
@@ -98,10 +105,22 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
         for (const id of server.moduleGraph.idToModuleMap.keys()) if (id.endsWith(suffix)) server.watcher.emit('change', id);
     };
 
+    /** Tailwind 4 entry stylesheets served so far → the worktree roots their `@source` lines used. */
+    const tailwindEntries = new Map<string, string>();
+    const branchRoots = () => (hub?.worktrees ?? []).filter(w => !w.isHub).map(w => w.path);
+
+    /** Turning a branch on or off changes which worktrees Tailwind must scan. */
+    const refreshTailwind = () => {
+        if (!server) return;
+        const roots = branchRoots().join('\n');
+        for (const [file, used] of tailwindEntries) if (used !== roots) server.watcher.emit('change', file);
+    };
+
     const onChange = () => {
         if (!hub) return;
         allowRoots(hub.worktrees.map(w => w.path));
         regenerate(STORIES_MODULE);
+        refreshTailwind();
     };
 
     /** Resolution decisions baked into transformed worktree modules are stale for these branches. */
@@ -145,7 +164,23 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
         return hubPromise;
     };
 
-    return {
+    const tailwind: Plugin = {
+        name: 'storyhub:tailwind',
+        apply: 'serve',
+        transform: {
+            order: 'pre',
+            handler(code, id) {
+                const file = cleanId(id);
+                if (!file.endsWith('.css') || SPECIAL_QUERY.test(id) || isNodeModules(file) || !isTailwind4Entry(code, file)) return null;
+                const worktrees = branchRoots();
+                tailwindEntries.set(file, worktrees.join('\n'));
+                const out = withWorktreeSources(code, file, { gitRoot: opts.gitRoot, base: viteRoot, worktrees, cacheDir: join(viteRoot, CACHE_DIR) });
+                return { code: out, map: null };
+            }
+        }
+    };
+
+    const overlay: Plugin = {
         name: 'storyhub',
         enforce: 'pre',
         apply: 'serve',
@@ -209,4 +244,6 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
             return null;
         }
     };
+
+    return [overlay, tailwind];
 }

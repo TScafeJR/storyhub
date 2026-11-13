@@ -230,7 +230,9 @@ export async function storyhubWebpackFinal(config: Configuration, opts: Storyhub
     wrapRules(config.module.rules as RuleSetRule[], session);
     config.module.rules.unshift(
         { test: generated('storybook-stories.js'), enforce: 'pre', use: [{ loader: LOADER, options: { key, kind: 'stories' } }] },
-        { test: generated('storybook-config-entry.js'), enforce: 'pre', use: [{ loader: LOADER, options: { key, kind: 'entry' } }] }
+        { test: generated('storybook-config-entry.js'), enforce: 'pre', use: [{ loader: LOADER, options: { key, kind: 'entry' } }] },
+        // pre loaders see the raw stylesheet, before postcss-loader runs Tailwind on it
+        { test: /\.css$/i, exclude: /[\\/]node_modules[\\/]/, enforce: 'pre', use: [{ loader: LOADER, options: { key, kind: 'tailwind' } }] }
     );
     config.resolve ??= {};
     config.resolve.plugins = [...(config.resolve.plugins ?? []), new WorktreeFallbackPlugin(session)];

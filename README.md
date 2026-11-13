@@ -81,6 +81,26 @@ The running Storybook picks changes up within a second, with no restart.
 
 The selection is stored as `storyhub.include` and `storyhub.exclude` entries in the repo's local `.git/config`. It is never committed, and every worktree of the repo sees the same selection.
 
+## Tailwind
+
+Tailwind builds its CSS from the class names it finds in your source files, and the stylesheet Storybook loads belongs to your main checkout, so on its own it only scans that checkout. A class that appears only in a branch would never be generated, and the branch's stories would render without it. storyhub points Tailwind at your worktrees as well, but how that works depends on the version.
+
+Tailwind 4 needs no setup. storyhub adds the enabled worktrees to any stylesheet that imports `tailwindcss`, using Tailwind's own `@source` directive, and covers both your automatic detection root and any `@source` paths you already list. Turning a branch on regenerates the stylesheet while Storybook keeps running. This works with `@tailwindcss/vite` and with `@tailwindcss/postcss`.
+
+Tailwind 3 only reads its scan paths from its config file, so wrap that config in `withStoryhub`:
+
+```ts
+// tailwind.config.ts
+import { withStoryhub } from 'storyhub/tailwind';
+
+export default withStoryhub({
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  theme: { extend: {} },
+});
+```
+
+It adds the same globs inside every worktree of the repo, but only while storyhub's dev Storybook is running, so your app's builds and other tools see the config unchanged. It includes every worktree rather than only the enabled ones because Tailwind 3 reads its config once at startup, and a branch you turn on later should not need a restart. The extra classes only end up in Storybook's dev CSS. If your config sets `content.relative: true`, pass its directory as well: `withStoryhub(config, { base: __dirname })`.
+
 ## Let your agents do it
 
 Agents working in a worktree can opt their own work in. Add something like this to your `CLAUDE.md` or `AGENTS.md`:

@@ -11,7 +11,8 @@
     "branches",
     "mcp",
     "vite",
-    "webpack"
+    "webpack",
+    "tailwind"
   ],
   "homepage": "https://github.com/TScafeJR/storyhub#readme",
   "bugs": {
@@ -39,6 +40,11 @@
     "./webpack": {
       "types": "./dist/webpack.d.ts",
       "default": "./dist/webpack.js"
+    },
+    "./tailwind": {
+      "types": "./dist/tailwind.d.ts",
+      "import": "./dist/tailwind.js",
+      "require": "./dist/tailwind.cjs"
     },
     "./preset": "./preset.js",
     "./manager": "./dist/manager.js",
@@ -75,13 +81,17 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
+    "@tailwindcss/vite": "4.3.4",
     "@types/node": "22.19.1",
     "@types/react": "19.3.0",
     "oxlint": "1.91.0",
     "playwright": "1.64.1",
+    "postcss": "8.4.49",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "storybook": "10.6.4",
+    "tailwindcss": "4.3.4",
+    "tailwindcss3": "npm:tailwindcss@3.4.17",
     "tsup": "8.5.1",
     "typescript": "5.9.3",
     "vite": "8.3.5",

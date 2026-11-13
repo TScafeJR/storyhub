@@ -10,6 +10,7 @@ import type { BranchSummary } from './core/types.js';
 import { isNodeModules, realpath, relInside } from './core/paths.js';
 import { isSelected, readSelection, type SelectionOptions } from './core/selection.js';
 import { gitCommonDir, registerServer } from './core/servers.js';
+import { ROOT_ENV } from './core/tailwind.js';
 import { gitToplevel, listWorktrees } from './core/worktrees.js';
 import { createMcpHandler } from './mcp/server.js';
 import { buildBranchIndex, isStoryFileFor, type IndexContext, type StoryIndex } from './server/branchIndex.js';
@@ -138,7 +139,8 @@ export const viteFinal = async (config: InlineConfig, options: PresetOptions) =>
     const s = session(options.configDir);
     // loaded on demand so webpack projects never import vite (and vice versa)
     const { storyhubVitePlugin } = await import('./vite/plugin.js');
-    const plugin = storyhubVitePlugin({
+    process.env[ROOT_ENV] ??= ctx.gitRoot; // switches on withStoryhub (storyhub/tailwind)
+    const plugins = storyhubVitePlugin({
         gitRoot: ctx.gitRoot,
         configDir: options.configDir,
         isStoryFile: isStoryFileFor(ctx),
@@ -151,7 +153,7 @@ export const viteFinal = async (config: InlineConfig, options: PresetOptions) =>
             s.hub.resolve(hub);
         }
     });
-    return { ...config, plugins: [...(config.plugins ?? []), plugin] };
+    return { ...config, plugins: [...(config.plugins ?? []), ...plugins] };
 };
 
 /** The project's own preview annotation files (not addons'), git-root relative. */
@@ -174,6 +176,7 @@ export const webpackFinal = async (config: Configuration, options: PresetOptions
     if (!ctx) return config; // not a git checkout: stay out of the way
     const s = session(options.configDir);
     const { storyhubWebpackFinal } = await import('./webpack/plugin.js');
+    process.env[ROOT_ENV] ??= ctx.gitRoot; // switches on withStoryhub (storyhub/tailwind)
     return storyhubWebpackFinal(config, {
         gitRoot: ctx.gitRoot,
         configDir: options.configDir,
