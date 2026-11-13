@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Compiler, Configuration, RuleSetCondition, RuleSetRule } from 'webpack';
+import type { Compiler, Configuration, Resolver, RuleSetCondition, RuleSetRule } from 'webpack';
 import { cleanId, isNodeModules, isRelativeSpec, realpath, relInside } from '../core/paths.js';
 import { isSelected, readSelection, type SelectionOptions } from '../core/selection.js';
 import { StoryHub } from '../core/state.js';
@@ -70,12 +70,40 @@ export function wrapRules(rules: Array<RuleSetRule | '...' | false | null | unde
     }
 }
 
+/**
+ * enhanced-resolve plugin for files that exist only in a branch. Non-relative imports from a
+ * worktree module resolve from its hub twin, so an alias into the hub (`@/x` → `<hub>/src/x`)
+ * points at a hub file that a branch-only target does not have. When such a hub path fails to
+ * resolve and the issuer is a worktree file, the same path is retried inside that worktree.
+ * It runs after the built-in taps, so anything the hub has is still taken from the hub.
+ */
+export class WorktreeFallbackPlugin {
+    constructor(private session: WebpackSession) {}
+
+    apply(resolver: Resolver): void {
+        // Tapped on described-relative, whose built-in taps (file, then directory) fall through
+        // when they fail; `relative` itself ends at its description-file tap. The retry re-enters
+        // at `relative` so the worktree path is described against the worktree's package.json.
+        const target = resolver.ensureHook('relative');
+        resolver.getHook('described-relative').tapAsync({ name: NAME, stage: 100 }, (request, resolveContext, callback) => {
+            const hub = this.session.hub;
+            const issuer = (request.context as { issuer?: string } | undefined)?.issuer;
+            const path = request.path;
+            if (!hub || !issuer || typeof path !== 'string' || isNodeModules(path) || hub.branchForPath(path)) return callback();
+            const branch = hub.branchForPath(issuer);
+            const rel = branch ? relInside(hub.root, path) : null;
+            if (!branch || rel === null) return callback();
+            resolver.doResolve(target, { ...request, path: join(branch.worktree.path, rel) }, `storyhub: ${rel} only in ${branch.worktree.id}`, resolveContext, callback);
+        });
+    }
+}
+
 /** A ResolveFn backed by the compiler's own configured resolver (aliases, tsconfig paths, exports). */
 function webpackResolver(compiler: Compiler): ResolveFn {
     const resolver = compiler.resolverFactory.get('normal', { dependencyType: 'esm' });
-    return (spec, importer) =>
+    return (spec, importer, issuer) =>
         new Promise(resolve => {
-            resolver.resolve({}, dirname(importer), spec, {}, (err, result) => resolve(err || typeof result !== 'string' ? null : cleanId(result)));
+            resolver.resolve({ issuer: issuer ?? importer }, dirname(importer), spec, {}, (err, result) => resolve(err || typeof result !== 'string' ? null : cleanId(result)));
         });
 }
 
@@ -204,6 +232,8 @@ export async function storyhubWebpackFinal(config: Configuration, opts: Storyhub
         { test: generated('storybook-stories.js'), enforce: 'pre', use: [{ loader: LOADER, options: { key, kind: 'stories' } }] },
         { test: generated('storybook-config-entry.js'), enforce: 'pre', use: [{ loader: LOADER, options: { key, kind: 'entry' } }] }
     );
+    config.resolve ??= {};
+    config.resolve.plugins = [...(config.resolve.plugins ?? []), new WorktreeFallbackPlugin(session)];
     config.plugins = [...(config.plugins ?? []), new StoryhubWebpackPlugin(opts, session)];
     return config;
 }

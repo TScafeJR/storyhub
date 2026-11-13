@@ -225,8 +225,13 @@ export const scenarios = {
     'feat-new': {
         commit: true,
         files: {
+            // ChipIcon is new too and reached through the `@/` alias, which points into the hub
             'src/components/Chip.tsx': `import React from 'react';
-export const Chip = () => <b data-testid="chip">chip</b>;
+import { ChipIcon } from '@/components/ChipIcon';
+export const Chip = () => <b data-testid="chip"><ChipIcon />chip</b>;
+`,
+            'src/components/ChipIcon.tsx': `import React from 'react';
+export const ChipIcon = () => <i data-testid="chip-icon">*</i>;
 `,
             'src/components/Chip.stories.tsx': `import { Chip } from './Chip';
 export default { title: 'Components/Chip', component: Chip };

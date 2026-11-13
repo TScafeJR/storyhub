@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { searchForWorkspaceRoot, type Plugin, type ViteDevServer } from 'vite';
-import { cleanId, isNodeModules, isRelativeSpec, realpath, relInside } from '../core/paths.js';
+import { cleanId, isNodeModules, realpath, relInside } from '../core/paths.js';
+import { resolveFromWorktree } from '../core/resolve.js';
 import { StoryHub } from '../core/state.js';
 import { isSelected, readSelection, type SelectionOptions } from '../core/selection.js';
 import { listWorktrees } from '../core/worktrees.js';
@@ -181,10 +182,8 @@ export function storyhubVitePlugin(opts: StoryhubVitePluginOptions): Plugin {
             const branch = hub.branchForPath(imp);
             if (!branch) return null;
             const wt = branch.worktree.path;
-            const twin = join(hub.root, relInside(wt, imp)!);
             const resolveOpts = { ...options, skipSelf: true };
-            let r = await this.resolve(source, twin, resolveOpts);
-            if (!r && isRelativeSpec(source)) r = await this.resolve(source, imp, resolveOpts);
+            const r = await resolveFromWorktree((s, i) => this.resolve(s, i, resolveOpts), x => x.id, source, imp, hub.root, wt);
             if (!r || r.external) return r;
             const q = r.id.search(/[?#]/);
             const path = q === -1 ? r.id : r.id.slice(0, q);

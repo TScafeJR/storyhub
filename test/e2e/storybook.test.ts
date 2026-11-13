@@ -130,7 +130,8 @@ function suite(builder: 'vite' | 'webpack') {
             const label = await renderedRoot(page, `/__storyhub/feat-label${card}`, '[data-testid=card]');
             expect(label).toContain('LABEL:card');
             expect(label).toContain('Go v1');
-            expect(await renderedRoot(page, '/__storyhub/feat-new/iframe.html?id=components-chip--default&viewMode=story', '[data-testid=chip]')).toContain('chip');
+            // ChipIcon is new in the branch and imported through `@/`, which points into the hub
+            expect(await renderedRoot(page, '/__storyhub/feat-new/iframe.html?id=components-chip--default&viewMode=story', '[data-testid=chip-icon]')).toContain('chip');
             expect(await renderedRoot(page, '/__storyhub/feat-ui/iframe.html?id=components-panel--default&viewMode=story', '[data-testid=box]')).toContain('data-version="2"');
             // feat-theme changes the module the preview's ThemeContext provider comes from; the branch
             // loads its own preview, so the provider still reaches the branch's consumers

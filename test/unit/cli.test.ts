@@ -142,7 +142,7 @@ describe('storyhub clean', () => {
         const c = makeFixture({ install: false });
         runGit(c.hub, 'merge', '-q', '--no-ff', '-m', 'merge feat-button', 'feat-button');
         // squash-merge feat-new: same end state on main, no ancestry
-        runGit(c.hub, 'checkout', 'feat-new', '--', 'src/components/Chip.tsx', 'src/components/Chip.stories.tsx');
+        runGit(c.hub, 'checkout', 'feat-new', '--', 'src/components/Chip.tsx', 'src/components/ChipIcon.tsx', 'src/components/Chip.stories.tsx');
         runGit(c.hub, 'rm', '-q', 'src/components/Badge.stories.tsx');
         runGit(c.hub, 'commit', '-q', '-m', 'squash feat-new');
 

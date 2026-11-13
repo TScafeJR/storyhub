@@ -1,6 +1,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { isBareSpec, isNodeModules, isRelativeSpec, realpath, relInside } from './paths.js';
+import { isBareSpec, isNodeModules, realpath, relInside } from './paths.js';
+import { resolveFromWorktree } from './resolve.js';
 import { getParser, loadParser } from './parser.js';
 import type { FileChange, ResolveFn } from './types.js';
 
@@ -94,16 +95,16 @@ export class SpecCache {
     }
 }
 
-/** Caches resolutions per (importer directory, specifier). */
+/** Caches resolutions per (importer directory, specifier, issuer directory). */
 export class ResolveCache {
     private cache = new Map<string, Promise<string | null>>();
     constructor(private resolveFn: ResolveFn) {}
 
-    resolve(spec: string, importer: string): Promise<string | null> {
-        const key = `${dirname(importer)}\0${spec}`;
+    resolve(spec: string, importer: string, issuer?: string): Promise<string | null> {
+        const key = `${dirname(importer)}\0${spec}\0${issuer ? dirname(issuer) : ''}`;
         let hit = this.cache.get(key);
         if (!hit) {
-            hit = this.resolveFn(spec, importer)
+            hit = this.resolveFn(spec, importer, issuer)
                 .then(r => (r ? realpath(r) : null))
                 .catch(() => null);
             this.cache.set(key, hit);
@@ -180,11 +181,9 @@ export async function buildBranchGraph(ctx: GraphContext, hubEdges: Edges, branc
             return e;
         }
         const abs = join(branchRoot, rel);
-        const hubTwin = join(ctx.hubRoot, rel);
         const out = new Set<string>();
         for (const spec of (await ctx.specs.specs(abs)) ?? []) {
-            let r = await ctx.resolver.resolve(spec, hubTwin);
-            if (!r && isRelativeSpec(spec)) r = await ctx.resolver.resolve(spec, abs);
+            const r = await resolveFromWorktree((s, imp, issuer) => ctx.resolver.resolve(s, imp, issuer), p => p, spec, abs, ctx.hubRoot, branchRoot);
             if (!r) {
                 if (isBareSpec(spec)) missing.add(spec);
                 continue;

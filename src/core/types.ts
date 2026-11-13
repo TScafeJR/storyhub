@@ -21,9 +21,10 @@ export interface Worktree {
 
 /**
  * Resolves an import specifier the way the builder does. Returns an absolute file path
- * (query stripped), or null when the import is external or unresolvable.
+ * (query stripped), or null when the import is external or unresolvable. `issuer`, when given,
+ * is the worktree file the import is really made by (`importer` is then its hub twin).
  */
-export type ResolveFn = (spec: string, importer: string) => Promise<string | null>;
+export type ResolveFn = (spec: string, importer: string, issuer?: string) => Promise<string | null>;
 
 /** Builder adapter: everything storyhub needs from Vite, webpack, etc. */
 export interface BuilderAdapter {

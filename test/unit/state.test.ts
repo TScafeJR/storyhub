@@ -71,10 +71,18 @@ describe('StoryHub on the fixture repo', () => {
         expect(b.changes).toEqual([
             { rel: 'src/components/Badge.stories.tsx', kind: 'D' },
             { rel: 'src/components/Chip.stories.tsx', kind: 'A' },
-            { rel: 'src/components/Chip.tsx', kind: 'A' }
+            { rel: 'src/components/Chip.tsx', kind: 'A' },
+            { rel: 'src/components/ChipIcon.tsx', kind: 'A' }
         ]);
         expect(b.affectedStories).toEqual(['src/components/Chip.stories.tsx']);
         expect(b.dirty.has('src/components/Chip.tsx')).toBe(true);
+    });
+
+    it('a new file imported through an alias into the hub resolves to the worktree', () => {
+        // `@/` maps to the hub's src, where ChipIcon does not exist; the edge must still land on it
+        const edges = branch('feat-new').edges;
+        expect([...(edges.get('src/components/Chip.tsx') ?? [])]).toEqual(['src/components/ChipIcon.tsx']);
+        expect(edges.has('src/components/ChipIcon')).toBe(false);
     });
 
     it('workspace package edits propagate and dependency drift is flagged', () => {
