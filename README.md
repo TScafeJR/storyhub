@@ -250,9 +250,12 @@ This repo's own installs refuse package versions published less than 7 days ago 
 npm run release              # or: pnpm release
 npm run release -- --full    # also run the browser E2E suite first
 npm run release -- --dry-run # walk through every step without changing anything
+npm run release -- --github  # create missing GitHub releases for tags already pushed
 ```
 
-It checks you are on an up-to-date `main` and logged in to npm, offers `git commit -p` for any pending changes, runs the linter, typecheck and unit tests, asks for patch, minor or major, drafts the `CHANGELOG.md` entry from commit subjects since the last release tag (you can edit it), then bumps the version, commits, tags, pushes and runs `pnpm publish`. Nothing changes until you confirm the plan. If your npm account uses two-factor auth, pnpm prompts for the code.
+With npm, keep the `--` before the flags (`pnpm release --github` needs none). If you leave it out, the script still picks the flags up from npm.
+
+It checks you are on an up-to-date `main` and logged in to npm and the GitHub CLI (`gh`), lets you stage any pending changes hunk by hunk (`git add -p`) and asks for the commit message, runs the linter, typecheck and unit tests, asks for patch, minor or major, drafts the `CHANGELOG.md` entry from commit subjects since the last release tag (you can edit it), then bumps the version, commits, tags, pushes, runs `pnpm publish` and creates the GitHub release (marked latest, with the changelog entry as its notes). Nothing changes until you confirm the plan. If your npm account uses two-factor auth, pnpm prompts for the code. If the GitHub release step fails after npm has the version, `npm run release -- --github` finishes it.
 
 The script is called `release`, not `publish`, because `pnpm publish` runs a script named `publish` itself.
 

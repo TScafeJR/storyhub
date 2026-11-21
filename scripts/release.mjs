@@ -4,6 +4,10 @@
 //   npm run release              the real thing
 //   npm run release -- --full    also run the browser E2E suite before releasing
 //   npm run release -- --dry-run show every step without changing anything
+//   npm run release -- --github  only create GitHub releases for pushed tags that lack one
+//
+// The `--` matters with npm (not with pnpm): `npm run release --dry-run` hands the flag to npm.
+// The script reads it back from npm's environment, so that form works too.
 //
 // Not named "publish": that is an npm lifecycle script, which `pnpm publish` would run again.
 import { spawnSync } from 'node:child_process';
@@ -14,8 +18,12 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
-const DRY = args.has('--dry-run');
-const FULL = args.has('--full');
+// `npm run release --dry-run` (without `--`) gives the flag to npm, which passes it on only as
+// npm_config_dry_run. Honor that too, or a "dry run" typed that way would be a real release.
+const flag = name => args.has(`--${name}`) || process.env[`npm_config_${name.replaceAll('-', '_')}`] === 'true';
+const DRY = flag('dry-run');
+const FULL = flag('full');
+const GITHUB_ONLY = flag('github');
 
 const bold = s => `\x1b[1m${s}\x1b[0m`;
 const dim = s => `\x1b[2m${s}\x1b[0m`;
@@ -40,11 +48,104 @@ function run(cmd, cmdArgs, { quiet = false, allowFail = false, mutates = false }
 }
 const git = (...a) => run('git', a, { quiet: true }).out;
 
-const rl = createInterface({ input: process.stdin, output: process.stdout });
-let inputClosed = false;
-rl.on('close', () => (inputClosed = true));
-// a closed stdin (Ctrl-D, or input piped in and used up) answers "" which cancels
-const ask = async q => (inputClosed ? '' : (await rl.question(q).catch(() => '')).trim().toLowerCase());
+/** The body of the `## <version> (...)` section in CHANGELOG.md, or '' if there is none. */
+function changelogNotes(version, text = readFileSync(join(root, 'CHANGELOG.md'), 'utf8')) {
+    const lines = text.split('\n');
+    const start = lines.findIndex(l => l.startsWith(`## ${version} `) || l === `## ${version}`);
+    if (start === -1) return '';
+    const end = lines.findIndex((l, i) => i > start && l.startsWith('## '));
+    return lines.slice(start + 1, end === -1 ? undefined : end).join('\n').trim();
+}
+
+/** Creates the GitHub release for a pushed tag, with its changelog section as the notes. */
+function githubRelease(tag, { latest = true, changelog } = {}) {
+    const notes = changelogNotes(tag.slice(1), changelog);
+    return run(
+        'gh',
+        ['release', 'create', tag, '--verify-tag', '--title', tag, `--latest=${latest}`, ...(notes ? ['--notes', notes] : ['--generate-notes'])],
+        { mutates: true, allowFail: true }
+    ).ok;
+}
+
+function requireGh() {
+    if (run('gh', ['auth', 'status'], { quiet: true, allowFail: true }).ok) return;
+    if (DRY) console.log(dim('  gh is not installed or not logged in (a real release would stop here: run gh auth login)'));
+    else fail('The GitHub CLI is not installed or not logged in. Install gh and run `gh auth login`, then try again.');
+}
+
+// --github: backfill releases for tags already on origin, oldest first, newest marked latest
+if (GITHUB_ONLY) {
+    step('GitHub releases for existing tags');
+    requireGh();
+    const remoteTags = new Set(
+        git('ls-remote', '--tags', '--refs', 'origin', 'v*')
+            .split('\n')
+            .filter(Boolean)
+            .map(l => l.split('refs/tags/')[1])
+    );
+    const tags = [...remoteTags].filter(t => /^v\d+\.\d+\.\d+$/.test(t)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const existing = new Set(run('gh', ['release', 'list', '--limit', '1000', '--json', 'tagName', '--jq', '.[].tagName'], { quiet: true }).out.split('\n'));
+    const missing = tags.filter(t => !existing.has(t));
+    if (!missing.length) {
+        console.log('  every pushed release tag already has a GitHub release');
+        process.exit(0);
+    }
+    const newest = tags.at(-1);
+    let failed = 0;
+    for (const t of missing) if (!githubRelease(t, { latest: t === newest })) failed++;
+    if (failed) fail(`${failed} GitHub release(s) could not be created; see the errors above.`);
+    console.log(`\n✓ ${DRY ? 'Dry run complete.' : `Created ${missing.length} GitHub release(s).`}`);
+    process.exit(0);
+}
+
+const TTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+
+// Piped input: one reader for the whole run, queueing lines so an answer that arrives before its
+// question is asked is not lost. A closed stdin (input used up) answers "" which cancels.
+let piped;
+function pipedLine() {
+    if (!piped) {
+        piped = { queue: [], waiting: null, closed: false, reader: createInterface({ input: process.stdin }) };
+        piped.reader.on('line', line => (piped.waiting ? piped.waiting(line) : piped.queue.push(line)));
+        piped.reader.on('close', () => {
+            piped.closed = true;
+            piped.waiting?.('');
+        });
+    }
+    if (piped.queue.length) return Promise.resolve(piped.queue.shift());
+    if (piped.closed) return Promise.resolve('');
+    return new Promise(resolve => {
+        piped.waiting = line => {
+            piped.waiting = null;
+            resolve(line);
+        };
+    });
+}
+const closeInput = () => piped?.reader.close();
+
+/**
+ * Asks one question. On a terminal the reader exists only while the question is open: an open
+ * readline holds the terminal in raw mode and reads every key, so a child that prompts
+ * (`git commit -p`, the editor, pnpm's 2FA prompt) would get no input. Ctrl-C / Ctrl-D answer "".
+ */
+async function prompt(question) {
+    let answer;
+    if (TTY) {
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        answer = await new Promise(resolve => {
+            rl.on('SIGINT', () => rl.close());
+            rl.on('close', () => resolve(''));
+            rl.question(question).then(resolve, () => resolve(''));
+        });
+        rl.close();
+    } else {
+        process.stdout.write(question);
+        answer = await pipedLine();
+        process.stdout.write(`${answer}\n`);
+    }
+    return answer.trim();
+}
+const ask = async q => (await prompt(q)).toLowerCase();
 const confirm = async q => ['y', 'yes'].includes(await ask(`${q} [y/N] `));
 
 /**
@@ -52,7 +153,7 @@ const confirm = async q => ['y', 'yes'].includes(await ask(`${q} [y/N] `));
  * the first letter of an option. Without a terminal (piped input) it falls back to typing a name.
  */
 async function select(question, items, initial = 0) {
-    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    if (!TTY) {
         const names = items.map(i => i.value);
         items.forEach(i => console.log(`  ${i.label.padEnd(8)} ${i.detail}`));
         let answer = '';
@@ -62,7 +163,6 @@ async function select(question, items, initial = 0) {
         }
         return answer;
     }
-    rl.pause();
     const { emitKeypressEvents } = await import('node:readline');
     emitKeypressEvents(process.stdin);
     process.stdin.setRawMode(true);
@@ -82,8 +182,8 @@ async function select(question, items, initial = 0) {
         const done = value => {
             process.stdin.off('keypress', onKey);
             process.stdin.setRawMode(false);
+            process.stdin.pause();
             out.write('\x1b[?25h');
-            rl.resume();
             resolve(value);
         };
         const onKey = (str, key = {}) => {
@@ -118,13 +218,22 @@ if (!who.ok) {
     if (DRY) console.log(dim('  not logged in to npm (a real release would stop here: run npm login)'));
     else fail('Not logged in to npm. Run `npm login` and try again.');
 } else console.log(`  npm user: ${who.out}`);
+requireGh();
 
 // 2. Commit pending work, hunk by hunk.
 step('Pending changes');
 if (git('status', '--porcelain')) {
-    if (DRY) console.log(dim('  [dry-run] git commit -p'));
+    if (DRY) console.log(dim('  [dry-run] git add -p, then commit with a message typed here'));
     else {
-        run('git', ['commit', '-p'], { allowFail: true });
+        // stage, then ask for the message here: `git commit -p` opens $EDITOR (vi by default) for
+        // it, and closing that without writing a message silently aborts the whole commit
+        run('git', ['add', '-p'], { allowFail: true });
+        if (!run('git', ['diff', '--cached', '--quiet'], { quiet: true, allowFail: true }).ok) {
+            const message = await prompt('  Commit message (empty to stop): ');
+            if (!message) fail('No commit message, so nothing was committed. What you staged is still staged.');
+            run('git', ['commit', '--quiet', '-m', message]);
+            console.log(`  committed: ${git('log', '-1', '--format=%h %s')}`);
+        }
         if (git('status', '--porcelain')) {
             console.log(git('status', '--short'));
             fail('Uncommitted changes remain. Commit or stash them (pnpm publish needs a clean tree), then run release again.');
@@ -184,7 +293,8 @@ const plan = [
     ...(type === 'current' ? [] : [`set version ${pkg.version} → ${next}, update CHANGELOG.md, commit "Release ${tag}"`]),
     `tag ${tag}`,
     `push main and ${tag} (plus any unpushed release tags) to origin`,
-    `pnpm publish ${pkg.name}@${next} to npm`
+    `pnpm publish ${pkg.name}@${next} to npm`,
+    `create the GitHub release ${tag} (marked latest) with the changelog entry as notes`
 ];
 plan.forEach((p, i) => console.log(`  ${i + 1}. ${p}`));
 if (!(await confirm('Go?'))) fail('Cancelled. Nothing was changed.');
@@ -199,9 +309,7 @@ if (!DRY && git('status', '--porcelain')) {
 if (type !== 'current') {
     if (!DRY && (await confirm('Edit the changelog entry in your editor first?'))) {
         writeFileSync(changelogPath, changelog);
-        rl.pause();
         run(process.env.VISUAL || process.env.EDITOR || 'vi', [changelogPath]);
-        rl.resume();
     } else if (!DRY) writeFileSync(changelogPath, changelog);
     // re-read rather than reuse the startup copy, so nothing written meanwhile is lost
     if (!DRY) writeFileSync(pkgPath, `${JSON.stringify({ ...JSON.parse(readFileSync(pkgPath, 'utf8')), version: next }, null, 2)}\n`);
@@ -216,7 +324,14 @@ step('Push');
 run('git', ['push', '--atomic', '--follow-tags', 'origin', 'main'], { mutates: true });
 
 step('Publish');
+closeInput();
 const pub = run('pnpm', ['publish'], { mutates: true, allowFail: true });
-rl.close();
-if (!pub.ok) fail(`pnpm publish failed. ${tag} is already pushed; fix the problem and run \`pnpm publish\` again (no new tag needed).`);
+if (!pub.ok) fail(`pnpm publish failed. ${tag} is already pushed; fix the problem and run \`pnpm publish\`, then \`pnpm release --github\` (no new tag needed).`);
+
+step('GitHub release');
+// in a dry run CHANGELOG.md was not written, so read the notes from the in-memory draft
+if (!githubRelease(tag, { changelog: DRY ? changelog : undefined })) {
+    fail(`${pkg.name}@${next} is on npm, but the GitHub release failed. Run \`pnpm release --github\` to create it.`);
+}
 console.log(`\n✓ ${DRY ? 'Dry run complete.' : `Released ${pkg.name}@${next}: https://www.npmjs.com/package/${pkg.name}`}`);
+if (!DRY) console.log(`  GitHub: https://github.com/TScafeJR/storyhub/releases/tag/${tag}`);
