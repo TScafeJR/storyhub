@@ -4,10 +4,10 @@
 //   npm run release              the real thing
 //   npm run release -- --full    also run the browser E2E suite before releasing
 //   npm run release -- --dry-run show every step without changing anything
-//   npm run release -- --github  only create GitHub releases for pushed tags that lack one
+//   npm run release -- --github  only create GitHub releases for pushed tags that don't have one
 //
-// The `--` matters with npm (not with pnpm): `npm run release --dry-run` hands the flag to npm.
-// The script reads it back from npm's environment, so that form works too.
+// With npm the `--` matters, since without it the flag goes to npm instead of this script. The
+// script reads it back from npm's environment (see `flag` below), so that form works too.
 //
 // Not named "publish": that is an npm lifecycle script, which `pnpm publish` would run again.
 import { spawnSync } from 'node:child_process';
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
 // `npm run release --dry-run` (without `--`) gives the flag to npm, which passes it on only as
-// npm_config_dry_run. Honor that too, or a "dry run" typed that way would be a real release.
+// npm_config_dry_run. Read that too, or a dry run typed that way would turn into a real release.
 const flag = name => args.has(`--${name}`) || process.env[`npm_config_${name.replaceAll('-', '_')}`] === 'true';
 const DRY = flag('dry-run');
 const FULL = flag('full');
@@ -100,8 +100,8 @@ if (GITHUB_ONLY) {
 
 const TTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
-// Piped input: one reader for the whole run, queueing lines so an answer that arrives before its
-// question is asked is not lost. A closed stdin (input used up) answers "" which cancels.
+// With piped input, one reader stays open for the whole run and queues lines, so an answer that
+// arrives before its question isn't lost. Once stdin runs out every answer is "", which cancels.
 let piped;
 function pipedLine() {
     if (!piped) {
@@ -124,9 +124,10 @@ function pipedLine() {
 const closeInput = () => piped?.reader.close();
 
 /**
- * Asks one question. On a terminal the reader exists only while the question is open: an open
- * readline holds the terminal in raw mode and reads every key, so a child that prompts
- * (`git commit -p`, the editor, pnpm's 2FA prompt) would get no input. Ctrl-C / Ctrl-D answer "".
+ * Asks one question. On a terminal the reader is opened for the question and closed right after,
+ * because an open readline keeps the terminal in raw mode and reads every key, which leaves a child
+ * that prompts (`git add -p`, the editor, pnpm's 2FA prompt) with no input. Ctrl-C and Ctrl-D
+ * answer "".
  */
 async function prompt(question) {
     let answer;
@@ -223,10 +224,10 @@ requireGh();
 // 2. Commit pending work, hunk by hunk.
 step('Pending changes');
 if (git('status', '--porcelain')) {
-    if (DRY) console.log(dim('  [dry-run] git add -p, then commit with a message typed here'));
+    if (DRY) console.log(dim('  [dry-run] git add -p, then git commit with the message you type'));
     else {
-        // stage, then ask for the message here: `git commit -p` opens $EDITOR (vi by default) for
-        // it, and closing that without writing a message silently aborts the whole commit
+        // Stage with `git add -p` and ask for the message here instead of using `git commit -p`,
+        // which opens $EDITOR (vi by default) and quietly drops the commit if you close it empty.
         run('git', ['add', '-p'], { allowFail: true });
         if (!run('git', ['diff', '--cached', '--quiet'], { quiet: true, allowFail: true }).ok) {
             const message = await prompt('  Commit message (empty to stop): ');

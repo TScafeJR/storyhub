@@ -2,7 +2,9 @@
 
 ## 0.6.1 (2026-11-21)
 
-- chore: update release tag flow
+- Release script: create a GitHub release for each version, marked as latest with the changelog entry as its notes, and add `--github` to create the missing ones for tags already pushed
+- Release script: fix the terminal freezing at the pending-changes step, and ask for the commit message in the terminal instead of opening an editor
+- Release script: read flags typed as `npm run release --dry-run` (without `--`), which used to run a real release
 
 ## 0.6.0 (2026-11-13)
 
