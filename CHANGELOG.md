@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 (2026-11-21)
+
+- chore: update release tag flow
+
 ## 0.6.0 (2026-11-13)
 
 - Generate Tailwind classes used only in branches (Tailwind 3 and 4)
