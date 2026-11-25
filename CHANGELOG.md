@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 (2026-11-25)
+
+- improve cleanup behavior
+- "update cleanup behavior"
+- docs: update wording in documentation
+
 ## 0.6.1 (2026-11-21)
 
 - Release script: create a GitHub release for each version, marked as latest with the changelog entry as its notes, and add `--github` to create the missing ones for tags already pushed
