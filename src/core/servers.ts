@@ -26,7 +26,7 @@ export async function gitCommonDir(cwd: string): Promise<string> {
 
 const serversDir = (commonDir: string) => join(commonDir, 'storyhub', 'servers');
 
-const alive = (pid: number): boolean => {
+export const alive = (pid: number): boolean => {
     try {
         process.kill(pid, 0);
         return true;

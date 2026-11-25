@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { findCleanupCandidates, removeWorktrees } from './core/clean.js';
+import { type CleanCandidate, findCleanupCandidates, removeWorktrees } from './core/clean.js';
 import { classifyDrift, mergeBase, workingChanges } from './core/diff.js';
 import { git, gitTry } from './core/git.js';
 import { realpath } from './core/paths.js';
@@ -26,6 +26,9 @@ Cleaning up:
       --older-than days. Nothing is removed without --yes; worktrees with uncommitted changes,
       locked ones and detached HEADs with unmerged commits are always kept. --delete-branches
       also deletes merged branches with git branch -d.
+      Agents: run this whenever a branch you worked on merges. From the main checkout, git fetch,
+      then storyhub clean, then storyhub clean --yes if every worktree marked remove is finished.
+      A clean worktree with no commits yet is marked remove too, and --yes removes all of them.
 
 Inspecting:
   storyhub status [--url <url>] [--json]
@@ -153,7 +156,9 @@ async function clean() {
     const olderThan = flag('--older-than');
     const report = await findCleanupCandidates(process.cwd(), { base: flag('--base'), olderThanDays: olderThan === undefined ? undefined : Number(olderThan) });
     const yes = has('--yes');
-    const result = yes ? await removeWorktrees(process.cwd(), report.candidates, { deleteBranches: has('--delete-branches') }) : null;
+    // stderr, so stdout stays the report (and stays valid JSON with --json, which prints no progress)
+    const onProgress = has('--json') ? undefined : (c: CleanCandidate, i: number, total: number) => console.error(`Removing ${i + 1}/${total}: ${c.branch ?? '(detached)'}  ${c.path}`);
+    const result = yes ? await removeWorktrees(process.cwd(), report.candidates, { deleteBranches: has('--delete-branches'), onProgress }) : null;
     if (has('--json')) return console.log(JSON.stringify({ ...report, result }, null, 2));
     const removable = report.candidates.filter(c => c.removable);
     console.log(`Base: ${report.base}`);
@@ -163,6 +168,7 @@ async function clean() {
     }
     if (report.prunable.length) console.log(`  ${yes ? 'pruned ' : 'prune  '}  ${report.prunable.length} worktree record(s) whose directory is gone`);
     for (const k of result?.kept ?? []) console.log(`  note: ${k.path}: ${k.error}`);
+    if (result?.deletingInBackground) console.log(`  deleting node_modules of ${result.deletingInBackground} worktree(s) in the background`);
     if (result?.deletedBranches.length) console.log(`  deleted branches: ${result.deletedBranches.join(', ')}`);
     if (!removable.length && !report.prunable.length) console.log('  Nothing to clean.');
     else if (!yes) console.log(`\nDry run. Re-run with --yes to remove ${removable.length} worktree(s)${has('--delete-branches') ? ' and delete their merged branches' : ''}.`);

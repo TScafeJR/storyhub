@@ -64,7 +64,8 @@ export const selectionValue = (wt: Worktree): string => wt.branch ?? wt.path;
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-async function unsetExact(root: string, key: string, values: string[]): Promise<void> {
+/** Removes exactly these values from a multi-valued key in local git config. */
+export async function unsetExact(root: string, key: string, values: string[]): Promise<void> {
     for (const v of values) await gitTry(root, ['config', '--unset-all', key, `^${escapeRegex(v)}$`]);
 }
 

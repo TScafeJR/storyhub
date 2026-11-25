@@ -171,6 +171,9 @@ describe('storyhub clean', () => {
 
         const run = cli(c.hub, 'clean', '--yes', '--delete-branches');
         expect(run.code).toBe(0);
+        // progress goes to stderr only
+        expect(run.err).toMatch(/^Removing 1\/2: .+\nRemoving 2\/2: .+\n$/);
+        expect(run.out).not.toContain('Removing');
         expect(existsSync(c.worktrees['feat-button'])).toBe(false);
         expect(existsSync(c.worktrees['feat-new'])).toBe(false);
         expect(existsSync(c.worktrees['feat-label'])).toBe(true);
@@ -184,5 +187,25 @@ describe('storyhub clean', () => {
         const sel = await readSelection(c.hub);
         expect(sel.include).not.toContain('feat-button');
         expect(sel.include).toContain('feat-ui');
+    });
+
+    it('prints only JSON with --json, in worktree order, and unsets branch and path entries from both lists', async () => {
+        const c = makeFixture({ install: false });
+        runGit(c.hub, 'merge', '-q', '--no-ff', '-m', 'merge feat-button', 'feat-button');
+        const listed = (runGit(c.hub, 'worktree', 'list', '--porcelain') as string).split('\n').filter(l => l.startsWith('worktree ')).map(l => l.slice('worktree '.length));
+        const report = await findCleanupCandidates(c.hub);
+        expect(report.candidates.map(x => x.path)).toEqual(listed.slice(1));
+        const { path } = report.candidates.find(x => x.branch === 'feat-button')!;
+        runGit(c.hub, 'config', '--add', 'storyhub.include', path);
+        runGit(c.hub, 'config', '--add', 'storyhub.exclude', 'feat-button');
+        runGit(c.hub, 'config', '--add', 'storyhub.exclude', 'feat-button-2');
+
+        const run = cli(c.hub, 'clean', '--yes', '--json');
+        expect(run.err).toBe('');
+        expect(JSON.parse(run.out).result.removed).toEqual([path]);
+        const sel = await readSelection(c.hub);
+        expect(sel.include).not.toContain('feat-button');
+        expect(sel.include).not.toContain(path);
+        expect(sel.exclude).toEqual(['feat-button-2']);
     });
 });

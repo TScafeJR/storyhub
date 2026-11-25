@@ -109,9 +109,15 @@ Agents working in a worktree can opt their own work in, so you don't have to. Ad
 ## Storybook
 This repo uses storyhub. When you change UI in a worktree, make it visible in the shared Storybook by
 running `npx --no-install storyhub on` inside the worktree (or `npx --no-install storyhub on <branch>`
-from the main checkout). Run `npx --no-install storyhub off` when you are done. Use the `storyhub`
+from the main checkout). Run `npx --no-install storyhub off` to hide it again. Use the `storyhub`
 MCP tools to find the stories your branch affects, preview them (pass your story file's absolute path
 or `branch`), and run their tests against your branch, which also flags regressions against Common.
+
+When your branch merges, you must clean up its worktree before you call the task done. From the main
+checkout, run `git fetch` and then `npx --no-install storyhub clean` to see what would be removed. If
+every worktree marked `remove` is finished, run `npx --no-install storyhub clean --yes`. It removes
+all of them, including clean worktrees with no commits yet that another agent may have just created,
+so if you are unsure about any of them, ask first.
 ```
 
 ## Connect MCP
@@ -144,7 +150,7 @@ storyhub also wraps two of addon-mcp's tools so they understand branches. They k
 
 Every other addon-mcp tool, such as docs, story-writing instructions and changed stories, passes through unchanged. Without addon-mcp, storyhub still serves its own tools along with the preview and test tools. Branch tests use the Playwright your project already has for addon-vitest, and if Chromium is missing, `npx playwright install chromium` adds it.
 
-The tools only read your repo. Turning branches on and off is done with the CLI.
+The tools only read your repo. Turning branches on and off and cleaning up merged worktrees are done with the CLI. The server's instructions and `list-worktrees` tell connected agents to run `storyhub clean` after a merge.
 
 ## Clean up old worktrees
 
@@ -163,7 +169,7 @@ A worktree counts as a candidate when its branch is merged into the base (`origi
 - locked worktrees
 - detached HEADs with commits that are not in the base
 
-Removal uses `git worktree remove` without `--force`, and branch deletion uses `git branch -d`, so git itself refuses anything that would lose work. Removed worktrees also come off the opt-in list. Pass `--base <ref>` to compare against a different branch, or `--json` for scripts.
+Removal uses `git worktree remove` without `--force`, and branch deletion uses `git branch -d`, so git itself refuses anything that would lose work. Deleting `node_modules` is the slow part of removing a worktree, so storyhub moves the ignored ones into the repo's `.git/storyhub/trash` first and deletes them in the background once git has removed the worktree. If git refuses, they go back where they were. Removed worktrees also come off the opt-in list. Pass `--base <ref>` to compare against a different branch, or `--json` for scripts.
 
 ## Options
 

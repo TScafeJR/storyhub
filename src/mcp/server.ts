@@ -42,6 +42,12 @@ const DRIFT_HELP = {
     'missing-dep': 'the branch imports packages the hub cannot resolve; affected stories will error'
 };
 
+const CLEAN_UP =
+    'When a branch you worked on merges, clean up its worktree as part of finishing the task: from the main checkout (not the merged worktree) ' +
+    'run `git fetch`, then `npx --no-install storyhub clean` to see what would go. If every worktree marked remove is finished, run ' +
+    '`npx --no-install storyhub clean --yes`, which also takes them off the opt-in list. --yes removes everything marked remove, including ' +
+    'clean worktrees with no commits yet that another agent may have just created; if you are unsure about any of them, ask the user instead.';
+
 const INSTRUCTIONS =
     'storyhub renders opted-in git worktrees of this repo as branch sections in one Storybook ' +
     '(turn one on with `npx --no-install storyhub on` inside it; list-worktrees shows what is on). ' +
@@ -49,7 +55,8 @@ const INSTRUCTIONS =
     'get-branch-changes to see what a branch touched and why each story is affected, and get-story-variants ' +
     'to get side-by-side URLs (hub vs branches) for a story id. The story preview and story test tools accept a ' +
     '`branch` (or infer it from an absoluteStoryPath inside a worktree) to preview or test that branch\'s version; ' +
-    'branch tests also run the story in Common and flag regressions. Without a branch they work on Common as usual.';
+    'branch tests also run the story in Common and flag regressions. Without a branch they work on Common as usual. ' +
+    CLEAN_UP;
 
 interface ToolResult {
     content: Array<{ type: 'text'; text: string }>;
@@ -229,7 +236,8 @@ function tools(deps: McpDeps, up: Upstream): Tool[] {
             name: 'list-worktrees',
             title: 'List all worktrees and whether they are shown',
             description:
-                'Lists every git worktree of the repo, including ones not shown in Storybook. Branches are opt-in: to show the worktree you are working in, run `npx --no-install storyhub on` inside it (and `npx --no-install storyhub off` to hide it again). If the worktree has no node_modules, run it from a checkout that has storyhub installed, with the branch name: `npx --no-install storyhub on <branch>`.',
+                'Lists every git worktree of the repo, including ones not shown in Storybook. Branches are opt-in: to show the worktree you are working in, run `npx --no-install storyhub on` inside it (and `npx --no-install storyhub off` to hide it again). If the worktree has no node_modules, run it from a checkout that has storyhub installed, with the branch name: `npx --no-install storyhub on <branch>`. ' +
+                CLEAN_UP,
             inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
             run: async () => {
                 const hub = await deps.getHub();
@@ -239,7 +247,8 @@ function tools(deps: McpDeps, up: Upstream): Tool[] {
                         show: 'cd <worktree> && npx --no-install storyhub on',
                         hide: 'cd <worktree> && npx --no-install storyhub off',
                         fromMainCheckout: 'npx --no-install storyhub on <branch>',
-                        list: 'npx --no-install storyhub list'
+                        list: 'npx --no-install storyhub list',
+                        afterMerge: 'cd <main checkout> && git fetch && npx --no-install storyhub clean, then npx --no-install storyhub clean --yes if every worktree marked remove is finished'
                     }
                 });
             }
